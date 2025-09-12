@@ -1,4 +1,7 @@
 /target
 
-CLAUDE*.md
 PLAN.md
+
+CLAUDE*.md
+.claude/
+.zed/
