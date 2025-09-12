@@ -83,7 +83,7 @@ cargo test
 
 RUnits began as a learning project to deeply explore core Rust concepts through a practical, real-world application. The primary goal was to build a tool that is both useful and a clear example of high-quality Rust code.
 
-While inspired by GNU units, the goal is **not** to achieve 1:1 feature parity. Instead, the focus is on a modern implementation with an emphasis on:
+While inspired by GNU units, the goal is **not** to achieve 1:1 feature parity, or compete with a much more advanced calculator like [numbat](https://numbat.dev/). Instead, the focus is on a modern implementation with an emphasis on:
 
 - **Correctness**: Leveraging Rust's type system to prevent dimensional errors.
 - **Clarity**: Writing code that is easy to read, maintain, and contribute to.
