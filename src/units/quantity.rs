@@ -83,15 +83,64 @@ pub fn convert_quantity(
 
 // Factory functions for common quantities
 impl Quantity {
+    // Length units
     pub fn meters(value: f64) -> Self {
         Self::new(value, Unit::meter())
     }
 
+    pub fn feet(value: f64) -> Self {
+        Self::new(value, Unit::foot())
+    }
+
+    // Time units
     pub fn seconds(value: f64) -> Self {
         Self::new(value, Unit::second())
     }
 
+    // Mass units
     pub fn kilograms(value: f64) -> Self {
         Self::new(value, Unit::kilogram())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quantity_creation() {
+        let distance = Quantity::meters(10.0);
+        assert_eq!(distance.value, 10.0);
+        assert_eq!(distance.unit.name, "meter");
+    }
+
+    // Convert 10 feet to meters and verify the result
+    // Hint: 10 feet should be approximately 3.048 meters
+    // Use assert! with approximate equality for floating point
+    #[test]
+    fn test_successful_conversion() {
+        let unit = Unit::foot();
+        // Why using clone() here? Because Quantity must own the Unit, it won't accept a borrow
+        // Otherwise, we would have problems with lifetimes
+        let q = Quantity::new(10.0, unit.clone());
+        let result = q.convert_to(&Unit::meter()).unwrap();
+        assert!((result.value - 10.0 * unit.conversion_factor).abs() < 0.001);
+    }
+
+    // Try to convert meters to seconds - this should fail!
+    #[test]
+    fn test_failed_conversion() {
+        let q = Quantity::new(1.0, Unit::meter());
+        let result = q.convert_to(&Unit::second());
+        assert!(result.is_err());
+    }
+
+    // Convert meters -> feet -> meters and verify we get back to original
+    #[test]
+    fn test_round_trip_conversion() {
+        let q1 = Quantity::new(5.0, Unit::meter());
+        let q2 = q1.convert_to(&Unit::foot()).unwrap();
+        let q3 = q2.convert_to(&Unit::meter()).unwrap();
+        assert!((q1.value - q3.value).abs() < 0.001);
     }
 }

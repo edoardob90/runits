@@ -9,7 +9,7 @@ pub mod unit;
 // Instead of: use runits::units::dimension::Dimension;
 // Can do: use runits::units::Dimension;
 pub use dimension::Dimension;
-pub use quantity::Quantity;
+pub use quantity::{Quantity, ConversionError};
 pub use unit::Unit;
 
 // Re-export commonly used functions

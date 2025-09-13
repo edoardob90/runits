@@ -49,3 +49,32 @@ pub fn create_dimensions(dimensions: &[(Dimension, i8)]) -> DimensionMap {
     // Example: create_dimensions(&[(Dimension::Length, 1)])
     dimensions.iter().cloned().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dimension_creation() {
+        // Test a basic dimension creation
+        let length = Dimension::Length;
+        assert_eq!(length.name(), "length");
+    }
+
+    #[test]
+    fn test_map_dimension_creation() {
+        // Test the helper function
+        // Create a Length dimension and check that we can't return a Mass
+        let dims = create_dimensions(&[(Dimension::Length, 1)]);
+        assert_eq!(dims.get(&Dimension::Length), Some(&1));
+        assert_eq!(dims.get(&Dimension::Mass), None);
+    }
+
+    #[test]
+    fn test_compoung_dimension_velocity() {
+        let dims = create_dimensions(&[(Dimension::Length, 1), (Dimension::Time, -1)]);
+        assert_eq!(dims.get(&Dimension::Length), Some(&1));
+        assert_eq!(dims.get(&Dimension::Time), Some(&-1));
+        assert_eq!(dims.get(&Dimension::Mass), None);
+    }
+}
