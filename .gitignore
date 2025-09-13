@@ -1,7 +1,7 @@
 /target
 
-PLAN.md
-
-CLAUDE*.md
 .claude/
 .zed/
+
+# Ignore CLAUDE local file
+CLAUDE.local.md
