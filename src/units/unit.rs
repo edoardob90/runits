@@ -63,6 +63,10 @@ impl Unit {
         Self::new("minute", 60.0, &[(Dimension::Time, 1)])
     }
 
+    pub fn hour() -> Self {
+        Self::new("hour", 3600.0, &[(Dimension::Time, 1)])
+    }
+
     // Check if two units measure the same thing
     // Example: both meters and feet both have dimensions {Length: 1}
     pub fn is_compatible_with(&self, other: &Unit) -> bool {
@@ -72,7 +76,43 @@ impl Unit {
     // Get a human-readable description of this unit
     pub fn dimension_string(&self) -> String {
         // Convert {Length: 1, Time: -1} into "length/time"
-        todo!("Implement the dimension string formatting")
+        // Examples:
+        // - {Length: 1} -> "length"
+        // - {Length: 1, Time: -1} -> "length/time"
+        // - {Mass: 1, Length: 1, Time: -2} -> "mass*length/time^2"
+        // - {Length: 2} -> "length^2"
+        let mut numerator: Vec<String> = Vec::new();
+        let mut denominator: Vec<String> = Vec::new();
+
+        // Loop over the dimensions
+        for (dimension, &exponent) in self.dimensions.iter() {
+            // We need a String not a &str
+            let dimension_name = dimension.name().to_string();
+            // Check the exponent
+            let dimension_str = if exponent.abs() == 1 {
+                dimension_name
+            } else {
+                format!("{}^{}", dimension_name, exponent.abs())
+            };
+            // Build the numerator or denominator
+            if exponent > 0 {
+                numerator.push(dimension_str);
+            } else {
+                denominator.push(dimension_str);
+            }
+        }
+
+        // Combine the numerator & denominator with correct separators
+        let numerator_str = numerator.join("*");
+        let denominator_str = denominator.join("*");
+
+        if denominator_str.is_empty() {
+            numerator_str
+        } else if numerator_str.is_empty() {
+            format!("1/{}", denominator_str)
+        } else {
+            format!("{}/{}", numerator_str, denominator_str)
+        }
     }
 }
 
@@ -112,5 +152,45 @@ mod tests {
         let second = Unit::second();
         assert!(!meter.is_compatible_with(&second));
         assert!(!second.is_compatible_with(&meter));
+    }
+
+    #[test]
+    fn test_dimension_string() {
+        // Test simple dimension
+        let meter = Unit::meter();
+        assert_eq!(meter.dimension_string(), "length");
+
+        // Test velocity (length/time)
+        let velocity = Unit::new(
+            "velocity",
+            1.0,
+            &[(Dimension::Length, 1), (Dimension::Time, -1)],
+        );
+        assert_eq!(velocity.dimension_string(), "length/time");
+
+        // Test acceleration (length/time^2)
+        let acceleration = Unit::new(
+            "acceleration",
+            1.0,
+            &[(Dimension::Length, 1), (Dimension::Time, -2)],
+        );
+        assert_eq!(acceleration.dimension_string(), "length/time^2");
+
+        // Test force (mass*length/time^2)
+        let force = Unit::new(
+            "newton",
+            1.0,
+            &[
+                (Dimension::Mass, 1),
+                (Dimension::Length, 1),
+                (Dimension::Time, -2),
+            ],
+        );
+        // The order might vary since HashMap doesn't guarantee order
+        // So we just check it contains the right parts
+        let result = force.dimension_string();
+        assert!(result.contains("mass"));
+        assert!(result.contains("length"));
+        assert!(result.contains("time^2"));
     }
 }

@@ -71,7 +71,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compoung_dimension_velocity() {
+    fn test_compound_dimension_velocity() {
         let dims = create_dimensions(&[(Dimension::Length, 1), (Dimension::Time, -1)]);
         assert_eq!(dims.get(&Dimension::Length), Some(&1));
         assert_eq!(dims.get(&Dimension::Time), Some(&-1));
