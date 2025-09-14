@@ -118,3 +118,6 @@ Based on the development plan, the project will likely use:
 
 ## Current Status
 The project is in its initial state with only a basic "Hello, world!" implementation. Ready to begin Phase 1 development of core data structures and conversion logic.
+
+## Project Instructions
+- Remember: this is a learning project, so if you write all the code that makes this project work towards a final result bit by bit, I won't learn anything. Give me tasks, use comments liberally, ask me questions to check if I have understood why I'm writing some code in the way I want or did (when I ask you for check my code)
