@@ -1,6 +1,7 @@
 // This file defines what a Unit is and how to create common units
 
 use super::dimension::{Dimension, DimensionMap, create_dimensions};
+use std::ops::{Div, Mul};
 
 #[derive(Debug, Clone)]
 pub struct Unit {
@@ -124,9 +125,58 @@ impl PartialEq for Unit {
     }
 }
 
+// Implement multiplication for units: meter * second = meter·second
+impl Mul for Unit {
+    type Output = Unit; // The result of multiplying two Units is a Unit
+
+    fn mul(self, rhs: Unit) -> Unit {
+        // Unit multiplication as a Trait
+        let result_unit_name = format!("{}*{}", self.name, rhs.name);
+        // Build the result's DimensionMap
+        let mut result_dimensions: DimensionMap = self.dimensions.clone();
+        for (dimension, &exponent) in rhs.dimensions.iter() {
+            *result_dimensions.entry(dimension.clone()).or_insert(0) += exponent;
+        }
+        // Remove the dimensions with 0 exponents
+        result_dimensions.retain(|_, &mut exp| exp != 0);
+        // Build a slice of tuples from the DimensionMap
+        let dimensions_vec: Vec<(Dimension, i8)> = result_dimensions
+            .into_iter() // Returns an iterator that yields (Dimension, i8)
+            .collect(); // Gathers all items from the iterator into that collection type
+        // Return the new unit
+        Unit::new(
+            &result_unit_name,
+            self.conversion_factor * rhs.conversion_factor,
+            &dimensions_vec,
+        )
+    }
+}
+
+// Implement division for units: meter / second = m/s
+impl Div for Unit {
+    type Output = Unit;
+
+    fn div(self, rhs: Unit) -> Unit {
+        // TODO(human): Implement unit division
+        //
+        // Requirements:
+        // 1. Create a new name (e.g., "meter/second")
+        // 2. Divide the conversion factors
+        // 3. Subtract the dimension exponents of rhs from self
+        //
+        // Example: Length^1 / Time^1 = Length^1 * Time^-1
+        //
+        // Hints:
+        // - Similar to multiplication but subtract exponents
+        // - self_exponent - rhs_exponent
+        todo!("Implement unit division")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::units::quantity::Quantity;
 
     #[test]
     fn test_unit_creation() {
@@ -152,6 +202,47 @@ mod tests {
         let second = Unit::second();
         assert!(!meter.is_compatible_with(&second));
         assert!(!second.is_compatible_with(&meter));
+    }
+
+    #[test]
+    fn test_unit_multiplication() {
+        // Test meter * second
+        let meter = Unit::meter();
+        let second = Unit::second();
+        let meter_second = meter * second;
+
+        assert_eq!(meter_second.name, "meter*second");
+        assert_eq!(meter_second.conversion_factor, 1.0); // 1.0 * 1.0
+        assert_eq!(meter_second.dimension_string(), "length*time");
+    }
+
+    #[test]
+    fn test_unit_division() {
+        // Test meter / second (velocity)
+        let meter = Unit::meter();
+        let second = Unit::second();
+        let velocity = meter / second;
+
+        assert_eq!(velocity.name, "meter/second");
+        assert_eq!(velocity.conversion_factor, 1.0); // 1.0 / 1.0
+        assert_eq!(velocity.dimension_string(), "length/time");
+    }
+
+    #[test]
+    fn test_compound_unit_conversion() {
+        // Test km/hr to m/s
+        let km = Unit::kilometer();
+        let hour = Unit::hour();
+        let kmh = km / hour;
+
+        let m = Unit::meter();
+        let s = Unit::second();
+        let ms = m / s;
+
+        // 1 km/hr = 1000m/3600s = 0.2778 m/s
+        let speed = Quantity::new(1.0, kmh);
+        let converted = speed.convert_to(&ms).unwrap();
+        assert!((converted.value - 0.2778).abs() < 0.001);
     }
 
     #[test]
