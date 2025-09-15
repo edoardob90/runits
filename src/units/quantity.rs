@@ -64,11 +64,6 @@ impl Quantity {
     pub fn convert_value_to(&self, target_unit: &Unit) -> Result<f64, ConversionError> {
         self.convert_to(target_unit).map(|q| q.value)
     }
-
-    // DEPRECATED: Use Display trait instead (see impl Display below)
-    pub fn to_string(&self) -> String {
-        format!("{} {}", self.value, self.unit.name)
-    }
 }
 
 // Implement Display trait for pretty printing
