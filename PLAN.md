@@ -78,7 +78,7 @@ This plan breaks the project into five distinct phases. Each phase builds on the
 - [x] Can convert between compatible units (meter ↔ foot)
 - [x] Conversion fails appropriately for incompatible units (meter ↔ kilogram)
 - [x] Basic tests pass
-- [ ] `cargo clippy` gives no warnings
+- [x] `cargo clippy` gives no warnings
 
 #### **Testing Strategy:**
 ```rust
