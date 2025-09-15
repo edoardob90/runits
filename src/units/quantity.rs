@@ -20,7 +20,7 @@ impl fmt::Display for ConversionError {
             ConversionError::IncompatibleDimensions { from_unit, to_unit } => {
                 write!(
                     f,
-                    "Cannot convert from {} to {} - incompatible dimensions",
+                    "Cannot convert from '{}' to '{}' - incompatible dimensions",
                     from_unit, to_unit
                 )
             }
@@ -65,9 +65,19 @@ impl Quantity {
         self.convert_to(target_unit).map(|q| q.value)
     }
 
-    // Get a nice string representation
+    // DEPRECATED: Use Display trait instead (see impl Display below)
     pub fn to_string(&self) -> String {
         format!("{} {}", self.value, self.unit.name)
+    }
+}
+
+// Implement Display trait for pretty printing
+// This is the idiomatic Rust way to make your type printable
+impl fmt::Display for Quantity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Format the quantity for display
+        // Example: "10.5 meter" or "3.14159 kilogram"
+        write!(f, "{} {}", self.value, self.unit.name)
     }
 }
 
@@ -142,5 +152,17 @@ mod tests {
         let q2 = q1.convert_to(&Unit::foot()).unwrap();
         let q3 = q2.convert_to(&Unit::meter()).unwrap();
         assert!((q1.value - q3.value).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_display_trait() {
+        let distance = Quantity::meters(10.5);
+        // Test that Display trait works with format!
+        let display_string = format!("{}", distance);
+        assert_eq!(display_string, "10.5 meter");
+
+        // Test with println! macro (won't actually print in tests)
+        let output = format!("The distance is: {}", distance);
+        assert!(output.contains("10.5 meter"));
     }
 }

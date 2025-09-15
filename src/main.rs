@@ -6,7 +6,7 @@ fn main() {
 
     println!("1. Creating quantities:");
     let distance = Quantity::meters(100.0);
-    println!("Great! You have {}", distance.to_string());
+    println!("Great! You have {}", distance);
 
     println!("\n2. Successful conversions:");
     // Examples: feet to meters, miles to kilometers, minutes to seconds
@@ -27,7 +27,7 @@ fn main() {
     // Print both the original quantity and the converted result
     let target_unit = Unit::kilometer();
     let distance = Quantity::new(5.0, Unit::mile());
-    println!("You have: {}", distance.to_string());
+    println!("You have: {}", distance);
     println!("You want: {}", target_unit.name);
     print_conversion_result(&distance, distance.convert_to(&target_unit));
 }
@@ -40,7 +40,7 @@ fn print_conversion_result(original: &Quantity, result: Result<Quantity, Convers
     // For Ok: print "X unit -> Y target_unit"
     // For Err: print "Error: <error message>"
     match result {
-        Ok(converted) => println!("{} -> {}", original.to_string(), converted.to_string()),
+        Ok(converted) => println!("{} -> {}", original, converted),
         Err(error) => println!("Error: {}", error),
     }
 }
