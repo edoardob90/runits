@@ -8,11 +8,18 @@ use std::collections::HashMap;
 // Eq is needed when you have Hash
 pub enum Dimension {
     // Basic SI dimensions
-    Length,
-    Mass,
-    Time,
-    Temperature,
-    Current,
+    Length,            // meter (m)
+    Mass,              // kilogram (kg)
+    Time,              // second (s)
+    Temperature,       // kelvin (K)
+    Current,           // ampere (A)
+    AmountOfSubstance, // mole (mol)
+    LuminousIntensity, // candela (cd)
+
+    // Additional useful dimensions
+    Angle,       // radian (rad) - technically dimensionless, but useful to have
+    Information, // bit/byte
+    Currency,    // for monetary conversion and related (e.g. price of raw materials)
 }
 
 impl Dimension {
@@ -24,6 +31,8 @@ impl Dimension {
             Dimension::Time,
             Dimension::Temperature,
             Dimension::Current,
+            Dimension::AmountOfSubstance,
+            Dimension::LuminousIntensity,
         ]
     }
 
@@ -35,6 +44,11 @@ impl Dimension {
             Dimension::Time => "time",
             Dimension::Temperature => "temperature",
             Dimension::Current => "current",
+            Dimension::AmountOfSubstance => "amount",
+            Dimension::LuminousIntensity => "intensity",
+            Dimension::Angle => "angle",
+            Dimension::Information => "information",
+            Dimension::Currency => "currency",
         }
     }
 }
