@@ -372,6 +372,90 @@ pub fn parse_quantity(input: &str) -> Result<Quantity, ParseError> {
 
 ---
 
+### **Phase 4.5: Custom Units & Expressions**
+
+**Goal:** Enable user-defined units and non-linear conversions to make RUnits truly extensible.
+
+**Learning Approach:** This phase introduces advanced parsing concepts and function evaluation, building on the parser skills from Phase 3.
+
+#### **Tasks:**
+
+1. **Custom Unit Definition Parser:**
+   ```rust
+   // Example syntax to support:
+   // define furlong = 220 yard
+   // define light_year = 9.461e15 meter
+   // define fahrenheit(x) = (x - 32) * 5/9 + 273.15 kelvin
+
+   #[derive(Debug, Clone)]
+   pub enum UnitDefinition {
+       Simple(String, f64, Unit),              // "furlong = 220 yard"
+       Linear(String, f64, f64, Unit),         // "celsius = kelvin - 273.15"
+       Function(String, String),               // "fahrenheit(x) = ..."
+   }
+
+   pub struct CustomUnitRegistry {
+       definitions: HashMap<String, UnitDefinition>,
+   }
+   ```
+
+2. **Expression Evaluation Engine:**
+   ```rust
+   // Consider using the `meval` crate for mathematical expressions
+   use meval::eval_str;
+
+   impl UnitDefinition {
+       pub fn evaluate(&self, value: f64) -> Result<f64, EvaluationError> {
+           match self {
+               UnitDefinition::Simple(_, factor, _) => Ok(value * factor),
+               UnitDefinition::Function(_, expression) => {
+                   // Substitute variable and evaluate expression
+                   let expr = expression.replace("x", &value.to_string());
+                   eval_str(&expr).map_err(|e| EvaluationError::InvalidExpression(e))
+               }
+           }
+       }
+   }
+   ```
+
+3. **Configuration File Support:**
+   ```rust
+   // Support loading custom units from ~/.runits/units.conf
+   pub fn load_custom_units(path: &Path) -> Result<CustomUnitRegistry, ConfigError> {
+       // Parse file format:
+       // # Comments start with #
+       // define furlong = 220 yard
+       // define fahrenheit(x) = (x - 32) * 5/9 + 273.15 kelvin
+   }
+   ```
+
+4. **Integration with Parser:**
+   - Extend Phase 3's parser to recognize custom units
+   - Handle precedence of custom vs. built-in units
+   - Support function call syntax for parametric conversions
+
+#### **Validation Checklist:**
+- [ ] Can define simple custom units from config file
+- [ ] Can define linear conversions (temperature scales)
+- [ ] Can define function-based conversions with expressions
+- [ ] Custom units integrate seamlessly with existing parser
+- [ ] Error handling for invalid expressions and circular definitions
+- [ ] Performance remains acceptable with large custom unit sets
+
+#### **Rust Concepts You'll Learn:**
+- **Expression Evaluation:** Mathematical expression parsing and evaluation
+- **Configuration Management:** File I/O, parsing custom formats
+- **Function Pointers/Closures:** Storing and calling dynamic functions
+- **Error Handling Chains:** Complex error types with multiple failure modes
+- **HashMap Advanced Usage:** Custom key types and complex value storage
+
+#### **Common Pitfalls:**
+- **Circular Definitions:** `define a = 2 b; define b = 3 a`
+- **Expression Security:** Avoiding eval of arbitrary code
+- **Performance:** Caching evaluated expressions vs. re-parsing
+
+---
+
 ### **Phase 5: Polish and Advanced Features**
 
 **Goal:** Transform your functional tool into a polished application with great user experience.
@@ -433,6 +517,115 @@ pub fn parse_quantity(input: &str) -> Result<Quantity, ParseError> {
 - **Documentation:** Using rustdoc effectively
 - **Performance Profiling:** `cargo bench` and profiling tools
 - **Advanced Error Handling:** Error chains and context
+
+---
+
+### **Phase 6: Unit Systems**
+
+**Goal:** Support multiple unit systems (SI, CGS, Natural Units, Imperial) for specialized domains.
+
+**Learning Approach:** This phase explores advanced software architecture patterns, particularly the strategy pattern and trait objects for runtime behavior switching.
+
+#### **Tasks:**
+
+1. **Unit System Trait Design:**
+   ```rust
+   pub trait UnitSystem: Send + Sync {
+       fn name(&self) -> &'static str;
+       fn base_units(&self) -> HashMap<Dimension, Unit>;
+       fn conversion_factor_to_si(&self, dimension: &Dimension) -> f64;
+
+       // Optional: system-specific constants
+       fn physical_constants(&self) -> HashMap<String, f64> {
+           HashMap::new()
+       }
+   }
+   ```
+
+2. **Implement Common Unit Systems:**
+   ```rust
+   pub struct SISystem;        // meter, kilogram, second (current default)
+   pub struct CGSSystem;       // centimeter, gram, second
+   pub struct ImperialSystem;  // foot, pound, second
+   pub struct NaturalUnits;    // c = ℏ = k = 1 (for physics)
+
+   impl UnitSystem for CGSSystem {
+       fn name(&self) -> &'static str { "CGS" }
+
+       fn base_units(&self) -> HashMap<Dimension, Unit> {
+           let mut units = HashMap::new();
+           units.insert(Dimension::Length, Unit::new("centimeter", 0.01, &[(Dimension::Length, 1)]));
+           units.insert(Dimension::Mass, Unit::new("gram", 0.001, &[(Dimension::Mass, 1)]));
+           units.insert(Dimension::Time, Unit::new("second", 1.0, &[(Dimension::Time, 1)]));
+           units
+       }
+   }
+   ```
+
+3. **Runtime System Management:**
+   ```rust
+   pub struct UnitSystemManager {
+       current_system: Box<dyn UnitSystem>,
+       available_systems: HashMap<String, Box<dyn UnitSystem>>,
+   }
+
+   impl UnitSystemManager {
+       pub fn switch_system(&mut self, system_name: &str) -> Result<(), SystemError> {
+           if let Some(system) = self.available_systems.get(system_name) {
+               // Clone the system (requires Clone trait bound)
+               // Alternative: use Arc<dyn UnitSystem> for shared ownership
+           }
+       }
+
+       pub fn convert_between_systems(&self,
+           quantity: &Quantity,
+           target_system: &dyn UnitSystem
+       ) -> Result<Quantity, ConversionError> {
+           // Convert: source_system -> SI -> target_system
+       }
+   }
+   ```
+
+4. **CLI Integration:**
+   ```bash
+   # Examples of new CLI commands:
+   runits --system cgs "10 cm" "m"        # Use CGS system
+   runits --list-systems                   # Show available systems
+   runits --switch-system natural          # Switch default system
+   runits --convert-systems "10 kg" si cgs # Convert between systems
+   ```
+
+#### **Advanced Features:**
+- **Natural Units:** Where c = ℏ = k = 1, allowing energy and mass to be interchangeable
+- **System-Specific Constants:** Different values for fundamental constants in each system
+- **Composite Systems:** Custom systems that mix units from different base systems
+
+#### **Validation Checklist:**
+- [ ] Can switch between unit systems at runtime
+- [ ] Conversions work correctly within each system
+- [ ] Can convert quantities between different systems
+- [ ] CLI supports system selection and switching
+- [ ] Natural units correctly handle dimensionless constants
+- [ ] Performance impact of system switching is minimal
+
+#### **Rust Concepts You'll Learn:**
+- **Trait Objects:** Using `Box<dyn Trait>` for runtime polymorphism
+- **Strategy Pattern:** Encapsulating different algorithms (unit systems)
+- **Advanced Trait Design:** Send, Sync bounds for thread safety
+- **Arc and Clone:** Shared ownership of trait objects
+- **Complex Generic Constraints:** Working with multiple trait bounds
+
+#### **Common Pitfalls:**
+- **Object Safety:** Not all traits can be trait objects (no generic methods)
+- **Lifetime Management:** Ensuring trait objects live long enough
+- **Performance:** Virtual dispatch overhead vs. compile-time monomorphization
+- **Clone vs. Arc:** When to clone vs. share trait objects
+
+#### **Real-World Applications:**
+- **Physics Software:** Natural units for particle physics calculations
+- **Engineering Tools:** Imperial units for US engineering applications
+- **Scientific Computing:** CGS units for electromagnetic calculations
+- **International Software:** Automatic system selection based on locale
 
 ---
 
