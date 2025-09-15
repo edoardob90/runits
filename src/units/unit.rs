@@ -125,7 +125,7 @@ impl PartialEq for Unit {
     }
 }
 
-// Implement multiplication for units: meter * second = meter·second
+// Implement multiplication for units: meter * second
 impl Mul for Unit {
     type Output = Unit; // The result of multiplying two Units is a Unit
 
@@ -135,6 +135,10 @@ impl Mul for Unit {
         // Build the result's DimensionMap
         let mut result_dimensions: DimensionMap = self.dimensions.clone();
         for (dimension, &exponent) in rhs.dimensions.iter() {
+            // Why the deref operator (*) here?
+            // entry().or_insert(0) returns &mut i8 (a mutable reference to the value)
+            // We need to update the entry's key (exponent) by summing it to the rhs
+            // So we need to dereference the pointer and get its value
             *result_dimensions.entry(dimension.clone()).or_insert(0) += exponent;
         }
         // Remove the dimensions with 0 exponents
@@ -157,19 +161,19 @@ impl Div for Unit {
     type Output = Unit;
 
     fn div(self, rhs: Unit) -> Unit {
-        // TODO(human): Implement unit division
-        //
-        // Requirements:
-        // 1. Create a new name (e.g., "meter/second")
-        // 2. Divide the conversion factors
-        // 3. Subtract the dimension exponents of rhs from self
-        //
-        // Example: Length^1 / Time^1 = Length^1 * Time^-1
-        //
-        // Hints:
-        // - Similar to multiplication but subtract exponents
-        // - self_exponent - rhs_exponent
-        todo!("Implement unit division")
+        // Unit division as a Trait
+        let result_unit_name = format!("{}/{}", self.name, rhs.name);
+        let mut result_dimensions: DimensionMap = self.dimensions.clone();
+        for (dimension, &exponent) in rhs.dimensions.iter() {
+            *result_dimensions.entry(dimension.clone()).or_insert(0) -= exponent;
+        }
+        result_dimensions.retain(|_, &mut exp| exp != 0);
+        let dimensions_vec: Vec<(Dimension, i8)> = result_dimensions.into_iter().collect();
+        Unit::new(
+            &result_unit_name,
+            self.conversion_factor / rhs.conversion_factor,
+            &dimensions_vec,
+        )
     }
 }
 
@@ -243,6 +247,20 @@ mod tests {
         let speed = Quantity::new(1.0, kmh);
         let converted = speed.convert_to(&ms).unwrap();
         assert!((converted.value - 0.2778).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_operator_precedence() {
+        // Test that a / b * c is evaluated as (a / b) * c, not a / (b * c)
+        // These two expressions should give DIFFERENT results!
+        let ltr = Unit::meter() / Unit::second() * Unit::kilogram();
+        let with_parens = Unit::meter() / (Unit::second() * Unit::kilogram());
+        let ltr_dims = ltr.dimension_string();
+
+        assert_ne!(ltr_dims, with_parens.dimension_string());
+        assert!(ltr_dims.contains("/time"));
+        assert!(ltr_dims.contains("length") && ltr_dims.contains("mass"));
+        assert!(with_parens.dimension_string().contains("length/"));
     }
 
     #[test]
