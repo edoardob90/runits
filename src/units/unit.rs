@@ -1,22 +1,83 @@
-// This file defines what a Unit is and how to create common units
+//! The Unit object.
+//!
+//! This module defines what a Unit is and how to create common units.
+//! A unit is a measure of a physical quantity, such as length, mass, or time.
+//! Units are the building blocks of a "System of Units" (e.g., the SI, CGS or Gaussian),
+//! and there must be a given number of **base units** from which all other units can be derived.
+//! Each unit has a common name (plus an arbitrary number of short-names or symbols),
+//! a conversion factor to the base units (or 1.0 if it's a base unit itself),
+//! and a full specification of its dimensions (internally stored as a [`DimensionMap`]).
 
 use super::dimension::{Dimension, DimensionMap, create_dimensions};
 use std::ops::{Div, Mul};
 
+/// Represents a unit of measurement in a system of units.
+///
+/// A Unit is a fundamental building block in a system of units, representing a specific quantity
+/// with a name, conversion factor, and dimensions. Units are used to express physical quantities
+/// in a consistent and standardized manner.
+///
+/// # Examples
+///
+/// ```
+/// use runits::units::unit::Unit;
+/// use runits::units::dimension::Dimension;
+///
+/// // Create basic units
+/// let meter = Unit::new("meter", 1.0, &[(Dimension::Length, 1)]);
+/// let second = Unit::new("second", 1.0, &[(Dimension::Time, 1)]);
+///
+/// // Check dimensional compatibility first
+/// let foot = Unit::new("foot", 0.3048, &[(Dimension::Length, 1)]);
+/// assert!(meter.is_compatible_with(&foot));
+///
+/// // Combine units with arithmetic (consumes the units)
+/// let velocity = meter / second;
+/// assert_eq!(velocity.name, "meter/second");
+/// assert_eq!(velocity.conversion_factor, 1.0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Unit {
-    // The base name
-    // Rules: no plurals, lowercase
+    /// The unit's base name.
+    ///
+    /// Strict rules to follow:
+    /// 1. No plurals ("meter" and not "meters")
+    /// 2. Lowercase ("Newton" is the physicist, while "newton" is the SI unit of the force)
     pub name: String,
-    // How many base units this represents
-    // Example: 1 foot = 0.3048 meters (if meter is the base)
+    /// How many base units this represents?
+    ///
+    /// Example: 1 foot = 0.3048 meters (if meter is the base)
     pub conversion_factor: f64,
-    // What this unit measures: {Length: 1} for meters, {Mass: 1, Length: 1, Time: -2} for netwons
+    /// What this unit measures: `{Length: 1}` for meters, `{Mass: 1, Length: 1, Time: -2}` for newtons
     pub dimensions: DimensionMap,
 }
 
 impl Unit {
-    // Constructor: creates a new unit
+    /// Creates a new unit with the specified name, conversion factor, and dimensions.
+    ///
+    /// # Arguments
+    /// * `name` - The unit's name (should be lowercase, singular)
+    /// * `conversion_factor` - How many base units this represents (1.0 for base units)
+    /// * `dimensions` - List of (dimension, exponent) pairs defining what this unit measures
+    ///
+    /// # Examples
+    /// ```
+    /// use runits::units::unit::Unit;
+    /// use runits::units::dimension::Dimension;
+    ///
+    /// // Base unit
+    /// let meter = Unit::new("meter", 1.0, &[(Dimension::Length, 1)]);
+    ///
+    /// // Derived unit
+    /// let foot = Unit::new("foot", 0.3048, &[(Dimension::Length, 1)]);
+    ///
+    /// // Compound unit
+    /// let newton = Unit::new("newton", 1.0, &[
+    ///     (Dimension::Mass, 1),
+    ///     (Dimension::Length, 1),
+    ///     (Dimension::Time, -2)
+    /// ]);
+    /// ```
     pub fn new(name: &str, conversion_factor: f64, dimensions: &[(Dimension, i8)]) -> Self {
         Unit {
             name: name.to_string(),
@@ -123,13 +184,53 @@ impl Unit {
         Self::new("byte", 8.0, &[(Dimension::Information, 1)])
     }
 
-    // Check if two units measure the same thing
-    // Example: both meters and feet both have dimensions {Length: 1}
+    /// Checks if two units measure the same physical quantity.
+    ///
+    /// Units are compatible if they have identical dimensions, meaning they can
+    /// be converted between each other. For example, meters and feet are both
+    /// length units, so they're compatible.
+    ///
+    /// # Examples
+    /// ```
+    /// use runits::units::unit::Unit;
+    /// use runits::units::dimension::Dimension;
+    ///
+    /// let meter = Unit::new("meter", 1.0, &[(Dimension::Length, 1)]);
+    /// let foot = Unit::new("foot", 0.3048, &[(Dimension::Length, 1)]);
+    /// let second = Unit::new("second", 1.0, &[(Dimension::Time, 1)]);
+    ///
+    /// assert!(meter.is_compatible_with(&foot));  // Both are length
+    /// assert!(!meter.is_compatible_with(&second)); // Length ≠ Time
+    /// ```
     pub fn is_compatible_with(&self, other: &Unit) -> bool {
         self.dimensions == other.dimensions
     }
 
-    // Get a human-readable description of this unit
+    /// Returns a human-readable description of what this unit measures.
+    ///
+    /// Converts the unit's dimensional formula into a readable string format.
+    /// Positive exponents appear in the numerator, negative in the denominator.
+    ///
+    /// # Examples
+    /// ```
+    /// use runits::units::unit::Unit;
+    /// use runits::units::dimension::Dimension;
+    ///
+    /// let meter = Unit::new("meter", 1.0, &[(Dimension::Length, 1)]);
+    /// assert_eq!(meter.dimension_string(), "length");
+    ///
+    /// let velocity = Unit::new("velocity", 1.0, &[
+    ///     (Dimension::Length, 1),
+    ///     (Dimension::Time, -1)
+    /// ]);
+    /// assert_eq!(velocity.dimension_string(), "length/time");
+    ///
+    /// let acceleration = Unit::new("acceleration", 1.0, &[
+    ///     (Dimension::Length, 1),
+    ///     (Dimension::Time, -2)
+    /// ]);
+    /// assert_eq!(acceleration.dimension_string(), "length/time^2");
+    /// ```
     pub fn dimension_string(&self) -> String {
         // Convert {Length: 1, Time: -1} into "length/time"
         // Examples:

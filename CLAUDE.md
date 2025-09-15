@@ -48,6 +48,21 @@ cargo run -- "10 ft" "m"
 # Run tests
 cargo test
 
+# Test documentation examples
+cargo test --doc
+
+# Generate and open documentation
+cargo doc --open
+
+# Generate documentation with private items
+cargo doc --document-private-items --open
+
+# Check code formatting
+cargo fmt --check
+
+# Run linter
+cargo clippy
+
 # Run in interactive mode
 cargo run
 ```

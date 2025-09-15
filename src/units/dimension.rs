@@ -1,29 +1,72 @@
-// This file defines what types of measurement exist (lenght, mass, energy, etc.)
-// It defines the "categories" that units belong to
+//! Physical dimensions for unit conversion and dimensional analysis.
+//!
+//! This module defines the fundamental types of measurement (length, mass, time, etc.)
+//! that form the basis of the unit system. Each dimension represents a category
+//! that units belong to, enabling type-safe conversions and dimensional analysis.
 
 use std::collections::HashMap;
 
+/// Represents a fundamental physical dimension.
+///
+/// Dimensions are the categories that units belong to - for example, both meters
+/// and feet belong to the [`Length`](Dimension::Length) dimension, making them
+/// compatible for conversion.
+///
+/// # Examples
+/// ```
+/// use runits::units::dimension::Dimension;
+///
+/// let length = Dimension::Length;
+/// let mass = Dimension::Mass;
+///
+/// assert_eq!(length.name(), "length");
+/// assert_eq!(mass.name(), "mass");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-// Hash is needed because we'll use Dimension as HashMap keys
-// Eq is needed when you have Hash
 pub enum Dimension {
-    // Basic SI dimensions
-    Length,            // meter (m)
-    Mass,              // kilogram (kg)
-    Time,              // second (s)
-    Temperature,       // kelvin (K)
-    Current,           // ampere (A)
-    AmountOfSubstance, // mole (mol)
-    LuminousIntensity, // candela (cd)
+    /// Spatial extent - SI base unit: meter (m)
+    Length,
+    /// Inertial property - SI base unit: kilogram (kg)
+    Mass,
+    /// Duration - SI base unit: second (s)
+    Time,
+    /// Thermodynamic temperature - SI base unit: kelvin (K)
+    Temperature,
+    /// Electric current - SI base unit: ampere (A)
+    Current,
+    /// Amount of substance - SI base unit: mole (mol)
+    AmountOfSubstance,
+    /// Luminous intensity - SI base unit: candela (cd)
+    LuminousIntensity,
 
-    // Additional useful dimensions
-    Angle,       // radian (rad) - technically dimensionless, but useful to have
-    Information, // bit/byte
-    Currency,    // for monetary conversion and related (e.g. price of raw materials)
+    /// Planar angle - base unit: radian (rad)
+    ///
+    /// Technically dimensionless in SI, but useful to distinguish
+    /// angular measurements from pure numbers.
+    Angle,
+    /// Digital information - base unit: bit
+    Information,
+    /// Monetary value - for currency conversion
+    ///
+    /// Note: Currency conversions require external exchange rate data.
+    Currency,
 }
 
 impl Dimension {
-    // Helper function fo get all basic dimensions
+    /// Returns all seven SI base dimensions.
+    ///
+    /// This excludes derived dimensions like [`Angle`](Dimension::Angle),
+    /// [`Information`](Dimension::Information), and [`Currency`](Dimension::Currency).
+    ///
+    /// # Examples
+    /// ```
+    /// use runits::units::dimension::Dimension;
+    ///
+    /// let base_dims = Dimension::base_dimensions();
+    /// assert_eq!(base_dims.len(), 7);
+    /// assert!(base_dims.contains(&Dimension::Length));
+    /// assert!(base_dims.contains(&Dimension::Mass));
+    /// ```
     pub fn base_dimensions() -> Vec<Dimension> {
         vec![
             Dimension::Length,
@@ -36,7 +79,16 @@ impl Dimension {
         ]
     }
 
-    // Helper to get a human-readable name
+    /// Returns a human-readable name for this dimension.
+    ///
+    /// # Examples
+    /// ```
+    /// use runits::units::dimension::Dimension;
+    ///
+    /// assert_eq!(Dimension::Length.name(), "length");
+    /// assert_eq!(Dimension::AmountOfSubstance.name(), "amount");
+    /// assert_eq!(Dimension::LuminousIntensity.name(), "intensity");
+    /// ```
     pub fn name(&self) -> &'static str {
         match self {
             Dimension::Length => "length",
@@ -53,14 +105,31 @@ impl Dimension {
     }
 }
 
-// Type alias to make the code more readable
-// Instead of HashMap<Dimension, i8> we can write DimensionMap
+/// Type alias for dimension maps used in unit definitions.
+///
+/// Maps each [`Dimension`] to its exponent in a unit's dimensional formula.
+/// For example, velocity (m/s) would be `{Length: 1, Time: -1}`.
 pub type DimensionMap = HashMap<Dimension, i8>;
 
-// Helper to create a dimension easily
+/// Creates a [`DimensionMap`] from a slice of (dimension, exponent) pairs.
+///
+/// This is a convenience function for building the dimensional formula
+/// of a unit from a list of dimensions and their exponents.
+///
+/// # Examples
+/// ```
+/// use runits::units::dimension::{create_dimensions, Dimension};
+///
+/// // Create velocity dimensions: length/time
+/// let velocity_dims = create_dimensions(&[
+///     (Dimension::Length, 1),
+///     (Dimension::Time, -1)
+/// ]);
+///
+/// assert_eq!(velocity_dims.get(&Dimension::Length), Some(&1));
+/// assert_eq!(velocity_dims.get(&Dimension::Time), Some(&-1));
+/// ```
 pub fn create_dimensions(dimensions: &[(Dimension, i8)]) -> DimensionMap {
-    // Convert a slice of tuples into a HashMap
-    // Example: create_dimensions(&[(Dimension::Length, 1)])
     dimensions.iter().cloned().collect()
 }
 
