@@ -13,12 +13,12 @@ This file is embedded into the rustdoc site and rendered as a chapter there.
 |---|---|---|
 | 1 — Core Data Structures | ✅ Complete | `Dimension`, `Unit`, `Quantity` with full dimensional analysis; 7 SI base units + angle/information; `Mul`/`Div` traits for compound units |
 | 1.5 — Documentation Foundation | ✅ Complete | Rustdoc on all public APIs; doc-tests; GitHub Actions → GitHub Pages |
-| 2 — Functional CLI | ⏳ Next | See below |
-| 3 — Rich Conversions | ⏳ Planned | Temperature, SI prefixes, compound parsing |
+| 2 — Functional CLI | ✅ Complete | clap, pest parser, UnitDatabase (~80 aliases), thiserror; 6-sig-fig adaptive output formatter; bare unit names accepted |
+| 3 — Rich Conversions | ⏳ Next | Temperature (affine), SI prefixes, compound parsing, `--precision`/`--scientific` flags |
 | 4 — Interactive Experience | ⏳ Planned | REPL, fuzzy suggestions, colors, config |
 | 5 — Extensibility | ⏳ Planned | Custom units, constants, expressions |
 
-**Test suite (latest):** 17 unit tests + 9 doc tests, all passing. Zero external dependencies. Clean clippy, clean fmt.
+**Test suite (latest):** 47 unit tests + 9 doc tests + 14 integration tests, all passing. Dependencies: clap, pest, pest_derive, thiserror (dev: assert_cmd, predicates). Clean clippy, clean fmt.
 
 For a detailed change history, see `git log`.
 

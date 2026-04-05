@@ -34,6 +34,17 @@
 
 ---
 
+## Plan Lifecycle & Verification
+
+Every plan Claude writes (plan mode or otherwise) **must** include a **User Verification Steps** section — a series of concrete commands the user runs to confirm "done and working".
+
+- **Not a replacement for Claude's self-tests.** Claude still runs `cargo check`, `cargo clippy -- -D warnings`, `cargo test`, `cargo fmt --check` after every change and reports results. Those are table stakes.
+- **User verification is the final "done" marker.** A plan is only complete when (1) Claude's self-tests pass, AND (2) the user runs the listed verification steps and confirms they pass.
+- **Format:** numbered shell commands with expected outputs (or success criteria like exit code, file contents, browser render). Cover the happy path + at least 2–3 key failure modes the plan introduces.
+- **After user confirms:** Claude updates `docs/roadmap.md` Status table (phase → ✅ Complete) and commits.
+
+---
+
 ## Project Structure
 
 ```

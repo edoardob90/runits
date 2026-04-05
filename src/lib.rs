@@ -45,7 +45,13 @@
 //! runits
 //! ```
 
+pub mod cli;
+pub mod database;
+pub mod error;
+pub mod parser;
 pub mod units;
+
+pub use error::RUnitsError;
 
 /// Project roadmap: status, next phases, and feature catalog.
 ///

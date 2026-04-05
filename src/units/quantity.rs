@@ -1,34 +1,19 @@
-// This file defines a Quantity, i.e., a number with a unit
-// This is the core data structure to represent a physical quantity
+//! The Quantity object: a number paired with a unit.
+//!
+//! A [`Quantity`] is the core data type users manipulate — `10 meter`, `3.5 foot`,
+//! `6.022e23 mole`. It carries the value, the unit, and (via the unit's
+//! [`DimensionMap`](crate::units::dimension::DimensionMap)) full dimensional
+//! information, enabling safe conversions with runtime dimensional checking.
 
 use super::unit::Unit;
+use crate::error::RUnitsError;
 use std::fmt;
 
-// Custom error type for conversion errors
-#[derive(Debug, Clone)]
-pub enum ConversionError {
-    IncompatibleDimensions { from_unit: String, to_unit: String },
-    // Add more error types when needed
-}
-
-// This lets us use ? operator and print errors nicely
-impl std::error::Error for ConversionError {}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConversionError::IncompatibleDimensions { from_unit, to_unit } => {
-                write!(
-                    f,
-                    "Cannot convert from '{}' to '{}' - incompatible dimensions",
-                    from_unit, to_unit
-                )
-            }
-        }
-    }
-}
-
-// The Quantity struct represents a physical quantity with a value and a unit
+/// A physical quantity: a numeric value tagged with a [`Unit`].
+///
+/// `Quantity` is the type returned by parsing user input and the type the
+/// CLI ultimately converts and prints. Arithmetic is deferred to the unit
+/// itself (see [`Unit`]'s `Mul`/`Div` impls).
 #[derive(Debug, Clone)]
 pub struct Quantity {
     pub value: f64,
@@ -36,59 +21,91 @@ pub struct Quantity {
 }
 
 impl Quantity {
-    // Constructor
+    /// Constructs a quantity from a value and owned unit.
     pub fn new(value: f64, unit: Unit) -> Self {
         Quantity { value, unit }
     }
 
-    // Conversion function - this is where the "magic" happens!
-    pub fn convert_to(&self, target_unit: &Unit) -> Result<Quantity, ConversionError> {
-        // Step 1: Check if conversion is possible
+    /// Converts this quantity to the given target unit.
+    ///
+    /// Returns [`RUnitsError::IncompatibleDimensions`] if the target unit's
+    /// dimensions don't match this quantity's. The error carries both unit
+    /// names and both dimension strings so the CLI can print a useful message.
+    pub fn convert_to(&self, target_unit: &Unit) -> Result<Quantity, RUnitsError> {
         if !self.unit.is_compatible_with(target_unit) {
-            return Err(ConversionError::IncompatibleDimensions {
-                from_unit: self.unit.name.clone(),
-                to_unit: target_unit.name.clone(),
+            return Err(RUnitsError::IncompatibleDimensions {
+                from: self.unit.name.clone(),
+                to: target_unit.name.clone(),
+                from_dim: self.unit.dimension_string(),
+                to_dim: target_unit.dimension_string(),
             });
         }
 
-        // Step 2: Do the math
-        // Convert to base units first, then to target
-        // Example: 5 miles -> (5 * 1.610) meters -> (8.05 / 1.0) meters = 8.05 meters
+        // Convert through base units: value * from_factor / to_factor.
         let base_value = self.value * self.unit.conversion_factor;
         let target_value = base_value / target_unit.conversion_factor;
 
         Ok(Quantity::new(target_value, target_unit.clone()))
     }
 
-    // Helper function for easy conversion (returns just the number)
-    pub fn convert_value_to(&self, target_unit: &Unit) -> Result<f64, ConversionError> {
+    /// Like [`convert_to`](Self::convert_to) but returns just the numeric value.
+    pub fn convert_value_to(&self, target_unit: &Unit) -> Result<f64, RUnitsError> {
         self.convert_to(target_unit).map(|q| q.value)
     }
 }
 
-// Implement Display trait for pretty printing
-// This is the idiomatic Rust way to make your type printable
 impl fmt::Display for Quantity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Format the quantity for display
-        // Example: "10.5 meter" or "3.14159 kilogram"
-        write!(f, "{} {}", self.value, self.unit.name)
+        write!(f, "{} {}", format_value(self.value), self.unit.name)
     }
 }
 
-// Helper function to convert between units
-pub fn convert_quantity(
-    value: f64,
-    from_unit: &Unit,
-    to_unit: &Unit,
-) -> Result<f64, ConversionError> {
+/// Format an `f64` for human display with 6 significant figures.
+///
+/// Rounding to 6 sig figs removes floating-point representation noise
+/// (`0.000049999999999999996` → `0.00005`). The output switches between
+/// decimal and scientific notation based on magnitude so extreme values
+/// don't bloat into long strings of digits.
+///
+/// - Decimal when `1e-4 ≤ |v| < 1e7`
+/// - Scientific (`{:e}`) outside that band
+/// - Plain passthrough for zero / NaN / infinity
+///
+/// Phase 3 will add a user-configurable precision flag; this function
+/// is where that knob will plug in.
+fn format_value(v: f64) -> String {
+    if v == 0.0 || v.is_nan() || v.is_infinite() {
+        return format!("{}", v);
+    }
+
+    let abs = v.abs();
+    const SIG_FIGS: usize = 6;
+
+    // Round by round-tripping through `{:.N$e}` — printf-style formatting
+    // does exact decimal-digit rounding internally, avoiding the
+    // multiply-by-10^k FP drift that plagues manual rounding for very
+    // large/small magnitudes. `{:.5e}` gives 6 significant figures
+    // (1 digit before the point + 5 after).
+    let rounded_str = format!("{:.*e}", SIG_FIGS - 1, v);
+    let rounded: f64 = rounded_str
+        .parse()
+        .expect("round-trip our own scientific-notation output");
+
+    if (1e-4..1e7).contains(&abs) {
+        format!("{}", rounded)
+    } else {
+        format!("{:e}", rounded)
+    }
+}
+
+/// Standalone helper for when you don't already have a `Quantity` in hand.
+pub fn convert_quantity(value: f64, from_unit: &Unit, to_unit: &Unit) -> Result<f64, RUnitsError> {
     let quantity = Quantity::new(value, from_unit.clone());
     quantity.convert_value_to(to_unit)
 }
 
-// Factory functions for common quantities
+// Convenience factories for the most common quantity shapes.
 impl Quantity {
-    // Length units
     pub fn meters(value: f64) -> Self {
         Self::new(value, Unit::meter())
     }
@@ -97,12 +114,10 @@ impl Quantity {
         Self::new(value, Unit::foot())
     }
 
-    // Time units
     pub fn seconds(value: f64) -> Self {
         Self::new(value, Unit::second())
     }
 
-    // Mass units
     pub fn kilograms(value: f64) -> Self {
         Self::new(value, Unit::kilogram())
     }
@@ -119,28 +134,25 @@ mod tests {
         assert_eq!(distance.unit.name, "meter");
     }
 
-    // Convert 10 feet to meters and verify the result
-    // Hint: 10 feet should be approximately 3.048 meters
-    // Use assert! with approximate equality for floating point
     #[test]
     fn test_successful_conversion() {
         let unit = Unit::foot();
-        // Why using clone() here? Because Quantity must own the Unit, it won't accept a borrow
-        // Otherwise, we would have problems with lifetimes
         let q = Quantity::new(10.0, unit.clone());
         let result = q.convert_to(&Unit::meter()).unwrap();
         assert!((result.value - 10.0 * unit.conversion_factor).abs() < 0.001);
     }
 
-    // Try to convert meters to seconds - this should fail!
     #[test]
-    fn test_failed_conversion() {
+    fn test_failed_conversion_reports_dimensions() {
         let q = Quantity::new(1.0, Unit::meter());
-        let result = q.convert_to(&Unit::second());
-        assert!(result.is_err());
+        let err = q.convert_to(&Unit::second()).unwrap_err();
+        let msg = err.to_string();
+        // Error message should mention both units AND both dimensions,
+        // so the user immediately sees why the conversion is illegal.
+        assert!(msg.contains("meter") && msg.contains("second"));
+        assert!(msg.contains("length") && msg.contains("time"));
     }
 
-    // Convert meters -> feet -> meters and verify we get back to original
     #[test]
     fn test_round_trip_conversion() {
         let q1 = Quantity::new(5.0, Unit::meter());
@@ -152,12 +164,56 @@ mod tests {
     #[test]
     fn test_display_trait() {
         let distance = Quantity::meters(10.5);
-        // Test that Display trait works with format!
         let display_string = format!("{}", distance);
         assert_eq!(display_string, "10.5 meter");
+    }
 
-        // Test with println! macro (won't actually print in tests)
-        let output = format!("The distance is: {}", distance);
-        assert!(output.contains("10.5 meter"));
+    #[test]
+    fn format_value_decimal_in_band() {
+        assert_eq!(format_value(3.048), "3.048");
+        assert_eq!(format_value(8.04672), "8.04672");
+        assert_eq!(format_value(3600.0), "3600");
+        assert_eq!(format_value(0.5), "0.5");
+    }
+
+    #[test]
+    fn format_value_eliminates_float_noise() {
+        // 50e-6 in f64 is 0.000049999999999999996; 6 sig figs rounds it.
+        let noisy = 50.0 * 1e-6;
+        // Just under 1e-4 → scientific form `5e-5`.
+        assert_eq!(format_value(noisy), "5e-5");
+    }
+
+    #[test]
+    fn format_value_scientific_for_tiny_values() {
+        assert_eq!(format_value(5e-5), "5e-5");
+        assert_eq!(format_value(1.5e-7), "1.5e-7");
+    }
+
+    #[test]
+    fn format_value_scientific_for_huge_values() {
+        // Avogadro's number round-trip.
+        assert_eq!(format_value(6.022e23), "6.022e23");
+        assert_eq!(format_value(1e7), "1e7");
+    }
+
+    #[test]
+    fn format_value_rounds_to_six_sig_figs() {
+        // 62.1371192237334 → 62.1371
+        assert_eq!(format_value(62.1371192237334), "62.1371");
+    }
+
+    #[test]
+    fn format_value_handles_zero_and_negatives() {
+        assert_eq!(format_value(0.0), "0");
+        assert_eq!(format_value(-3.048), "-3.048");
+    }
+
+    #[test]
+    fn format_value_boundary_1e_minus_4() {
+        // 1e-4 is exactly ON the boundary → decimal.
+        assert_eq!(format_value(1e-4), "0.0001");
+        // Just below boundary → scientific.
+        assert_eq!(format_value(9.9e-5), "9.9e-5");
     }
 }

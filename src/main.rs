@@ -1,46 +1,29 @@
-// Import our units library
-use runits::units::{ConversionError, Quantity, Unit};
+//! `runits` CLI entry point.
+//!
+//! Parses two positional args (`quantity`, `target`), looks up the source
+//! unit from the embedded database, performs a dimensional-safe conversion,
+//! and prints the result. Errors surface as plain single-line messages on
+//! stderr and exit with code 1; clap handles its own errors (bad usage,
+//! `--help`, `--version`) with its own exit codes.
+
+use clap::Parser;
+use runits::{cli::Cli, database, error::RUnitsError, parser};
 
 fn main() {
-    println!("=== RUnits Demo - Testing Your Implementation ===\n");
-
-    println!("1. Creating quantities:");
-    let distance = Quantity::meters(100.0);
-    println!("Great! You have {}", distance);
-
-    println!("\n2. Successful conversions:");
-    // Examples: feet to meters, miles to kilometers, minutes to seconds
-    // Handle the Result using match or unwrap()
-    let target_unit = Unit::meter();
-    let feet = Quantity::new(10.0, Unit::foot());
-    print_conversion_result(&feet, feet.convert_to(&target_unit));
-
-    println!("\n3. Error handling:");
-    // Example: try to convert meters to seconds
-    // Use match to handle both Ok and Err cases properly
-    let target_unit = Unit::second();
-    let weight = Quantity::kilograms(90.0);
-    print_conversion_result(&weight, weight.convert_to(&target_unit));
-
-    println!("\n4. Complex example:");
-    // Example: "I ran 5 miles, how many kilometers is that?"
-    // Print both the original quantity and the converted result
-    let target_unit = Unit::kilometer();
-    let distance = Quantity::new(5.0, Unit::mile());
-    println!("You have: {}", distance);
-    println!("You want: {}", target_unit.name);
-    print_conversion_result(&distance, distance.convert_to(&target_unit));
+    if let Err(err) = run() {
+        eprintln!("Error: {}", err);
+        std::process::exit(1);
+    }
 }
 
-// This function should take a conversion result and print it nicely
-// Handle both success and error cases
-fn print_conversion_result(original: &Quantity, result: Result<Quantity, ConversionError>) {
-    // Your code here:
-    // Use match to handle both Ok(converted_quantity) and Err(error)
-    // For Ok: print "X unit -> Y target_unit"
-    // For Err: print "Error: <error message>"
-    match result {
-        Ok(converted) => println!("{} -> {}", original, converted),
-        Err(error) => println!("Error: {}", error),
-    }
+fn run() -> Result<(), RUnitsError> {
+    let cli = Cli::parse();
+    let db = database::global();
+
+    let source = parser::parse_quantity(&cli.quantity, db)?;
+    let target = parser::parse_unit_name(&cli.target, db)?;
+    let result = source.convert_to(&target)?;
+
+    println!("{}", result);
+    Ok(())
 }
