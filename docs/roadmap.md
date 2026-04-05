@@ -62,6 +62,7 @@ For a detailed change history, see `git log`.
 - **Non-linear conversions** for temperature (Celsius, Fahrenheit, Kelvin, Rankine, Réaumur)
 - **Compound-unit parsing** (`kg*m/s^2`, `5 kg/m^3`) via extended `pest` grammar
 - **Output formatting** — precision control, scientific notation, significant figures
+- **Result representation policy** — default keeps named derived units in compact compound form (Numbat-style: Coulomb's constant renders as `8.99e9 m/F`); opt-in `--to-base` expands every named unit to the 7 SI primitives (GNU units-style: same value becomes `8.99e9 kg·m³·A⁻²·s⁻⁴`). Default optimizes for readability and "paste into a report"; opt-in optimizes for dimensional analysis and teaching. The tool is a modern GNU Units, not a Numbat competitor — so both ship.
 - **Stretch:** GNU `units.dat` parser for instant access to ~2000 more units
 
 **Design decision — affine conversions.** The current `Unit` uses a single `conversion_factor: f64`. Temperature requires `scale + offset` (e.g., °F = (K − 273.15) × 9/5 + 32). Two viable designs:
@@ -98,6 +99,7 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 
 **Scope**
 - **User-defined units** via `~/.config/runits/units.conf` (syntax: `furlong = 220 yard`)
+- **User-defined dimension names** in the same config (syntax: `dimension Torque = Force × Length`) — extends the annotation registry (Phase 3 feature) at runtime. Pure HashMap entries, not type-system work.
 - **Physical constants** database (c, G, h, ℏ, k_B, N_A, R, e, ε₀, µ₀, g) — `runits const c` prints `2.998e8 m/s`
 - **Math expressions** in input (`runits "3*4 meter" "foot"`)
 - **Unit arithmetic** (`5 meter + 3 foot` with dimensional checking)
@@ -160,6 +162,7 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 12 | E=mc² energy↔mass equivalence | Deferred |
 | 13 | Frequency↔wavelength via c (λν=c) | 5 |
 | 14 | Fractional display (`2.5 ft` → `2 ft 6 in`) | 3 |
+| 15 | Named physical-quantity annotations: `3 m/s [Velocity]`, `9.81 m/s² [Acceleration]` via a dimension-signature → name registry (display side only, not type-system work) | 3 |
 
 ### Database & Data Enrichment
 

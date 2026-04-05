@@ -74,7 +74,7 @@ runits/
 
 - **Language:** Rust (edition 2024)
 - **Toolchain:** rustc 1.94.1, cargo 1.94.1 (as of 2026-03)
-- **Dependencies:** none yet (per roadmap: `clap` + `pest` + `thiserror` enter in Phase 2)
+- **Dependencies (current):** `clap` (derive), `pest` + `pest_derive`, `thiserror`; dev: `assert_cmd`, `predicates`. Later phases add REPL / config / fuzzy-match crates — see table below.
 
 ## Build & Development Commands
 
@@ -83,7 +83,7 @@ cargo check                          # compile check
 cargo build                          # debug build
 cargo build --release                # release build
 cargo run                            # run demo
-cargo run -- "10 ft" "m"             # run with args (future CLI)
+cargo run -- "10 ft" "m"             # run with args
 cargo test                           # all tests (unit + doc + integration)
 cargo test --doc                     # doc tests only
 cargo doc --no-deps --open           # generate + open API docs (incl. roadmap chapter)
@@ -92,19 +92,21 @@ cargo fmt --check                    # check formatting
 cargo clippy -- -D warnings          # lint, warnings-as-errors
 ```
 
-## Future Dependencies (per roadmap phases)
+## Dependencies by Phase
 
-| Crate | Phase | Purpose |
-|---|---|---|
-| `clap` (derive) | 2 | CLI argument parsing |
-| `thiserror` | 2 | error derive macros |
-| `pest` + `pest_derive` | 2 | parser generator / grammar |
-| `assert_cmd` + `predicates` | 2 | CLI integration tests |
-| `rustyline` | 4 | interactive REPL |
-| `strsim` | 4 | fuzzy unit-name suggestions |
-| `owo-colors` | 4 | colored output |
-| `clap_complete` + `clap_mangen` | 4 | shell completions + man pages |
-| `serde` + `toml` | 4 | TOML config file |
+Phase 2 entries below are **installed now**; later-phase entries will be added via `cargo add` as each phase begins.
+
+| Crate | Phase | Purpose | Status |
+|---|---|---|---|
+| `clap` (derive) | 2 | CLI argument parsing | ✅ |
+| `thiserror` | 2 | error derive macros | ✅ |
+| `pest` + `pest_derive` | 2 | parser generator / grammar | ✅ |
+| `assert_cmd` + `predicates` | 2 (dev) | CLI integration tests | ✅ |
+| `rustyline` | 4 | interactive REPL | ⏳ |
+| `strsim` | 4 | fuzzy unit-name suggestions | ⏳ |
+| `owo-colors` | 4 | colored output | ⏳ |
+| `clap_complete` + `clap_mangen` | 4 | shell completions + man pages | ⏳ |
+| `serde` + `toml` | 4 | TOML config file | ⏳ |
 
 Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 
