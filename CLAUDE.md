@@ -11,6 +11,29 @@
 - Type-safe dimensional analysis
 - Extensive unit database
 
+---
+
+## Working with the Roadmap (READ FIRST)
+
+**[`docs/roadmap.md`](docs/roadmap.md) is the single source of truth** for what is done, what is active, and what comes next. It is embedded into the rustdoc site via `include_str!` in `src/lib.rs`, so it is also a first-class chapter of the API docs.
+
+### Non-negotiable workflow rules
+
+1. **Check the roadmap before proposing or starting any change.** Every suggestion — a new feature, a refactor, a dependency, a test strategy, a file reorganization — must be reconciled with the current roadmap before action. If it already exists in the roadmap: use the existing scope, phase, and rationale. If it doesn't: stop and evaluate whether it belongs there.
+
+2. **If a change diverges from the roadmap, update the roadmap *first*.** Do not silently go off-plan. When you (or Claude) believe something is worth doing differently than what the roadmap says — different scope, different ordering, different design, a new feature, a dropped feature — the first action is to open a proposal against the roadmap, discuss, and commit the roadmap update **before** any code change lands. Roadmap edit → approval → code edit. Never the reverse.
+
+3. **Keep the roadmap's Status section current.** When a phase completes, update the Status table (phase → ✅ Complete, next phase → ⏳ Active). When a design decision is made that invalidates a phase's stated scope, update that phase's section. The roadmap must always reflect the **as-of-now** state of the project plus the next-up phases — never a stale snapshot.
+
+4. **Small roadmap edits are fine and expected.** Tightening a phase's scope, promoting a catalog item into a phase, recording a design decision — these are routine. The rule is about *synchronizing the doc with reality*, not about bureaucratic ceremony.
+
+### Quick self-check before making a change
+- [ ] I've read the relevant section of `docs/roadmap.md`.
+- [ ] The change I'm about to make fits the current phase's scope, OR I am updating the roadmap first.
+- [ ] After the change, the Status section and any affected phase section will still be accurate.
+
+---
+
 ## Project Structure
 
 ```
@@ -22,10 +45,10 @@ runits/
 ├── .github/workflows/     # CI: docs build + deploy to GitHub Pages
 ├── docs/
 │   ├── README.md          # docs index
-│   ├── roadmap.md         # status, phases, feature catalog (source of truth)
+│   ├── roadmap.md         # ⚓ source of truth: status, phases, feature catalog
 │   └── learning-notes.md  # Rust concepts learned
 └── src/
-    ├── lib.rs             # crate root, re-exports, embeds roadmap.md
+    ├── lib.rs             # crate root, re-exports, embeds roadmap.md into rustdoc
     ├── main.rs            # CLI entry (currently demo code)
     └── units/
         ├── mod.rs         # module re-exports
@@ -34,11 +57,13 @@ runits/
         └── quantity.rs    # Quantity struct, conversion, errors
 ```
 
-For status, next phases, and the feature catalog, see **[`docs/roadmap.md`](docs/roadmap.md)**.
+---
 
 ## Development Environment
+
 - **Language:** Rust (edition 2024)
-- **Toolchain:** rustc 1.89.0, cargo 1.89.0
+- **Toolchain:** rustc 1.94.1, cargo 1.94.1 (as of 2026-03)
+- **Dependencies:** none yet (per roadmap: `clap` + `pest` + `thiserror` enter in Phase 2)
 
 ## Build & Development Commands
 
@@ -50,22 +75,27 @@ cargo run                            # run demo
 cargo run -- "10 ft" "m"             # run with args (future CLI)
 cargo test                           # all tests (unit + doc + integration)
 cargo test --doc                     # doc tests only
-cargo doc --open                     # generate + open API docs
+cargo doc --no-deps --open           # generate + open API docs (incl. roadmap chapter)
 cargo doc --document-private-items   # include private items
 cargo fmt --check                    # check formatting
-cargo clippy                         # lint
+cargo clippy -- -D warnings          # lint, warnings-as-errors
 ```
 
-## Future Dependencies (per roadmap)
+## Future Dependencies (per roadmap phases)
 
-- `clap` — CLI argument parsing (Phase 2)
-- `thiserror` — error derive macros (Phase 2)
-- `pest` — parser generator (Phase 2)
-- `rustyline` — interactive REPL (Phase 4)
-- `owo-colors`, `strsim`, `clap_complete` — UX polish (Phase 4)
-- `serde` + `toml` — config file (Phase 4)
+| Crate | Phase | Purpose |
+|---|---|---|
+| `clap` (derive) | 2 | CLI argument parsing |
+| `thiserror` | 2 | error derive macros |
+| `pest` + `pest_derive` | 2 | parser generator / grammar |
+| `assert_cmd` + `predicates` | 2 | CLI integration tests |
+| `rustyline` | 4 | interactive REPL |
+| `strsim` | 4 | fuzzy unit-name suggestions |
+| `owo-colors` | 4 | colored output |
+| `clap_complete` + `clap_mangen` | 4 | shell completions + man pages |
+| `serde` + `toml` | 4 | TOML config file |
 
-Full feature catalog and phase affinity in `docs/roadmap.md`.
+Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 
 ## Code Style & Conventions
 
@@ -73,15 +103,23 @@ Full feature catalog and phase affinity in `docs/roadmap.md`.
 - Clippy-clean: `cargo clippy -- -D warnings`
 - Prefer `Result` over panics for recoverable failures
 - Leverage the type system for dimensional safety (the core thesis of the project)
-- Factory methods (`Unit::meter()`) for common constructions
+- Factory methods (e.g., `Unit::meter()`) for common constructions
 - Doc-test every public API example
+- Commit messages: short imperative subject (~50 char), no co-author lines
 
 ## Testing Strategy
+
 - Unit tests alongside implementation (`#[cfg(test)] mod tests`)
 - Doc tests in rustdoc examples
 - Integration tests under `tests/` for CLI behavior (Phase 2+)
 - Property-based tests for round-trip conversions (optional, see deferred track in roadmap)
 
+---
+
 ## Project Instructions
-- This is a **learning project**. When writing code on behalf of the user, favor small, focused changes and liberal comments over end-to-end blast-through implementations. Give tasks rather than solutions when the user is actively learning a concept.
-- When the user asks for code review, check understanding by asking targeted questions about *why* particular choices were made.
+
+- **Default mode: Claude Code implements the majority of the code.** Keep changes focused, use liberal comments to explain *why* (not *what*), and ship working increments. This is a 70/30 polished-tool/learning project per the roadmap — do not turn every implementation into a tutorial.
+- **Hand off when the learning is worth it.** When you hit a genuinely interesting Rust concept — trait objects, lifetimes, advanced pattern matching, clever ownership design, unsafe, macros, async internals, custom derive, etc. — pause, offer a concise hint with code comments marking the spot, and **ask the user if they want to take the lead on that specific piece**. The user decides; don't guess. Good candidates for hand-off: first encounter with a concept in the project, a design decision with multiple valid approaches, idiomatic-Rust "aha" moments.
+- **Expect the learning bar to rise.** Phase 1 covered basics (structs, enums, HashMap, Result). Upcoming phases introduce harder material: parser-generator macros (`pest`) and grammar files, error-type ergonomics (`thiserror`), static/lazy initialization, trait objects (`Box<dyn>`), affine conversions, REPL loop lifetimes, expression evaluators, possibly `unsafe` or custom derive. Flag these moments explicitly when they appear — the user may want to slow down and write them personally even if earlier decisions were "Claude implements."
+- **Code review mode:** when the user asks you to review their code, check understanding by asking targeted questions about *why* particular choices were made, not just whether they compile.
+- **Whenever a change touches or implies a change to the project's plan, update `docs/roadmap.md` first** (see the "Working with the Roadmap" section above).
