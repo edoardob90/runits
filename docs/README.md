@@ -1,19 +1,23 @@
 # RUnits Documentation
 
-This directory contains extended documentation, learning notes, and insights about the RUnits project.
+This directory contains extended documentation beyond the rustdoc API reference.
 
 ## Contents
 
-- **[learning-notes.md](learning-notes.md)** - Key Rust concepts learned during development
-- **[design-decisions.md](design-decisions.md)** - Why certain implementation choices were made
-- **[architecture.md](architecture.md)** - High-level system architecture and patterns used
+- **[roadmap.md](roadmap.md)** — Project status, next phases, and feature catalog (also embedded into rustdoc as the [`roadmap`](../src/lib.rs) module)
+- **[learning-notes.md](learning-notes.md)** — Key Rust concepts learned during development
 
 ## Auto-Generated API Documentation
 
-The main API documentation is auto-generated from rustdoc comments and available at:
-- **Local**: Run `cargo doc --open` to generate and view
-- **Online**: [GitHub Pages](https://YOUR_USERNAME.github.io/runits/) (updated automatically)
+The main API documentation is auto-generated from rustdoc comments:
+
+- **Local:** `cargo doc --open`
+- **Online:** GitHub Pages (updated automatically by CI on every push to `main`)
 
 ## Getting Started
 
-For basic usage examples, see the API documentation or the `examples/` directory in the project root.
+For usage examples see the crate-level docs in `src/lib.rs`, or run:
+
+```bash
+cargo doc --open
+```

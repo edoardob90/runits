@@ -29,10 +29,8 @@
 //!
 //! For additional documentation beyond the API reference:
 //!
+//! - **[Roadmap](roadmap/index.html)** - Status, next phases, and feature catalog
 //! - **Learning Notes** - Key Rust concepts learned during development (see `docs/learning-notes.md`)
-//! - **Design Decisions** - Implementation rationale and trade-offs (see `docs/design-decisions.md`)
-//! - **[Development Plan](https://github.com/edoardob90/runits/blob/main/PLAN.md)** -
-//!   Comprehensive development roadmap
 //!
 //! ## CLI Usage
 //!
@@ -49,8 +47,13 @@
 
 pub mod units;
 
+/// Project roadmap: status, next phases, and feature catalog.
+///
+/// See [`docs/roadmap.md`](https://github.com/edoardob90/runits/blob/main/docs/roadmap.md)
+/// for the source. This module exists only to surface the roadmap inside the
+/// generated rustdoc site.
+#[doc = include_str!("../docs/roadmap.md")]
+pub mod roadmap {}
+
 // Re-export the main types for easy importing
 pub use units::{Dimension, Quantity, Unit};
-
-// Re-export common function
-// ...

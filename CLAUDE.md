@@ -1,138 +1,87 @@
-# RUnits - Claude Code Configuration
+# RUnits — Claude Code Configuration
 
 ## Project Overview
-**RUnits** is a GNU Units-inspired command-line unit converter built in Rust. The project focuses on creating a powerful, type-safe unit conversion tool with support for compound units, dimensional analysis, and interactive mode.
 
-### Key Features
+**RUnits** is a GNU Units-inspired command-line unit converter in Rust. Focus: type-safe dimensional analysis, compound units, and a pleasant CLI/REPL experience.
+
+### Key features (target)
 - Direct unit conversions (`runits "2.5 miles" "km"`)
-- Compound unit parsing (`100 km/hr` to `m/s`)
+- Compound unit parsing (`100 km/hr` → `m/s`)
 - Interactive REPL mode
 - Type-safe dimensional analysis
-- Comprehensive unit database support
+- Extensive unit database
 
 ## Project Structure
+
 ```
 runits/
-├── Cargo.toml          # Rust project configuration
-├── README.md           # Project documentation
-├── PLAN.md            # Detailed 5-phase development plan
-├── LICENSE            # MIT license
-├── .gitignore         # Git ignore rules
+├── Cargo.toml             # project manifest
+├── README.md              # user-facing overview
+├── CLAUDE.md              # this file
+├── LICENSE                # MIT
+├── .github/workflows/     # CI: docs build + deploy to GitHub Pages
+├── docs/
+│   ├── README.md          # docs index
+│   ├── roadmap.md         # status, phases, feature catalog (source of truth)
+│   └── learning-notes.md  # Rust concepts learned
 └── src/
-    └── main.rs        # Entry point (currently "Hello, world!")
+    ├── lib.rs             # crate root, re-exports, embeds roadmap.md
+    ├── main.rs            # CLI entry (currently demo code)
+    └── units/
+        ├── mod.rs         # module re-exports
+        ├── dimension.rs   # Dimension enum + DimensionMap
+        ├── unit.rs        # Unit struct, arithmetic, factory methods
+        └── quantity.rs    # Quantity struct, conversion, errors
 ```
+
+For status, next phases, and the feature catalog, see **[`docs/roadmap.md`](docs/roadmap.md)**.
 
 ## Development Environment
 - **Language:** Rust (edition 2024)
 - **Toolchain:** rustc 1.89.0, cargo 1.89.0
-- **Target:** Command-line application
-- **Current State:** Early development (Phase 0 - basic project setup)
 
 ## Build & Development Commands
+
 ```bash
-# Check compilation without building
-cargo check
-
-# Build the project
-cargo build
-
-# Build for release
-cargo build --release
-
-# Run the application
-cargo run
-
-# Run with arguments (for unit conversion)
-cargo run -- "10 ft" "m"
-
-# Run tests
-cargo test
-
-# Test documentation examples
-cargo test --doc
-
-# Generate and open documentation
-cargo doc --open
-
-# Generate documentation with private items
-cargo doc --document-private-items --open
-
-# Check code formatting
-cargo fmt --check
-
-# Run linter
-cargo clippy
-
-# Run in interactive mode
-cargo run
+cargo check                          # compile check
+cargo build                          # debug build
+cargo build --release                # release build
+cargo run                            # run demo
+cargo run -- "10 ft" "m"             # run with args (future CLI)
+cargo test                           # all tests (unit + doc + integration)
+cargo test --doc                     # doc tests only
+cargo doc --open                     # generate + open API docs
+cargo doc --document-private-items   # include private items
+cargo fmt --check                    # check formatting
+cargo clippy                         # lint
 ```
 
-## Development Phases (from PLAN.md)
+## Future Dependencies (per roadmap)
 
-### Phase 1: Core Data Structures & Logic
-- Define `Dimension` enum (Length, Mass, Time, etc.)
-- Create `Unit` struct with conversion factors and dimensions
-- Create `Quantity` struct (value + unit)
-- Implement dimensional analysis and conversion logic
-- Custom error handling with `thiserror`
+- `clap` — CLI argument parsing (Phase 2)
+- `thiserror` — error derive macros (Phase 2)
+- `pest` — parser generator (Phase 2)
+- `rustyline` — interactive REPL (Phase 4)
+- `owo-colors`, `strsim`, `clap_complete` — UX polish (Phase 4)
+- `serde` + `toml` — config file (Phase 4)
 
-**Key Rust Concepts:** structs, enums, HashMap, ownership/borrowing, Result types
-
-### Phase 2: CLI Interface
-- Integrate `clap` for command-line argument parsing
-- Create basic parser for simple units
-- Implement main CLI flow
-- Error handling and user feedback
-
-**Key Rust Concepts:** crates/modules, derive macros, String vs &str, error propagation (?)
-
-### Phase 3: Advanced Parser
-- Implement `pest` parser for compound units
-- Define formal grammar for unit expressions
-- Parse complex expressions like `kg*m/s^2`
-- Tree walking and recursive parsing
-
-**Key Rust Concepts:** parsing, pest crate, match expressions, recursion
-
-### Phase 4: Unit Database
-- Create `UnitDatabase` struct with HashMap
-- Load comprehensive unit definitions
-- Parse GNU `units.dat` file format
-- Integration with parser
-
-**Key Rust Concepts:** File I/O, static/lazy_static, lifetimes
-
-### Phase 5: Polish & Advanced Features
-- Interactive REPL with `rustyline`
-- Improved error messages and suggestions
-- Additional features (currency, prefixes)
-
-**Key Rust Concepts:** closures, traits, conditional compilation
-
-## Dependencies (Future)
-Based on the development plan, the project will likely use:
-- `clap` - Command-line argument parsing
-- `thiserror` - Custom error types
-- `pest` - Parser generator for unit expressions
-- `lazy_static` or `once_cell` - Static initialization
-- `rustyline` - Interactive REPL
-- `serde` - Potentially for configuration files
+Full feature catalog and phase affinity in `docs/roadmap.md`.
 
 ## Code Style & Conventions
-- Follow standard Rust formatting (`cargo fmt`)
-- Use `clippy` for linting (`cargo clippy`)
-- Prefer `Result` types for error handling
-- Use meaningful type names (e.g., `Quantity`, `Dimension`)
-- Leverage Rust's type system for dimensional safety
+
+- Standard formatting: `cargo fmt`
+- Clippy-clean: `cargo clippy -- -D warnings`
+- Prefer `Result` over panics for recoverable failures
+- Leverage the type system for dimensional safety (the core thesis of the project)
+- Factory methods (`Unit::meter()`) for common constructions
+- Doc-test every public API example
 
 ## Testing Strategy
-- Unit tests for core conversion logic
-- Integration tests for CLI interface
-- Parser tests for various unit expressions
-- Error handling tests
-
-## Current Status
-The project is in its initial state with only a basic "Hello, world!" implementation. Ready to begin Phase 1 development of core data structures and conversion logic.
+- Unit tests alongside implementation (`#[cfg(test)] mod tests`)
+- Doc tests in rustdoc examples
+- Integration tests under `tests/` for CLI behavior (Phase 2+)
+- Property-based tests for round-trip conversions (optional, see deferred track in roadmap)
 
 ## Project Instructions
-- Remember: this is a learning project, so if you write all the code that makes this project work towards a final result bit by bit, I won't learn anything. Give me tasks, use comments liberally, ask me questions to check if I have understood why I'm writing some code in the way I want or did (when I ask you for check my code)
+- This is a **learning project**. When writing code on behalf of the user, favor small, focused changes and liberal comments over end-to-end blast-through implementations. Give tasks rather than solutions when the user is actively learning a concept.
+- When the user asks for code review, check understanding by asking targeted questions about *why* particular choices were made.
