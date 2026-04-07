@@ -1,28 +1,53 @@
-// Phase 2 pest grammar: number + unit_name (with scientific notation).
+// Phase 3 pest grammar: compound-unit expressions with operator precedence.
 //
-// Phase 3 will replace the permissive `unit_name` token with a proper
-// `unit_expression` / `term` / `exponent` tree, and add affine-transform
-// prefixes. Until then, multi-part names like "m/s" or "km/h" are handled
-// by seeding them as direct aliases in the UnitDatabase — "/" and "*" are
-// valid unit_name characters at the lexer level.
+// Supports inputs like "10 kg*m/s^2", "100 km/h", "5 (kg*m)/s^2", "meter".
+// The number prefix is optional — "mile" alone means "1 mile".
+//
+// Operator precedence (highest to lowest):
+//   1. Exponentiation: s^2, m^-1
+//   2. Multiplication: kg*m
+//   3. Division: m/s, kg*m/s^2
+//
+// Top-level rules are non-atomic, so whitespace between tokens is implicit
+// (zero or more spaces/tabs are consumed automatically by pest).
 
-// ---- Top-level rules ------------------------------------------------------
+// ---- Top-level rules --------------------------------------------------------
 
-// A full quantity: "10 meter", "2.5 foot", "6.022e23 mole".
-// The number is optional — a bare unit name like "mile" is shorthand for
-// "1 mile" (same convention as GNU units). Compound-atomic ($) so
-// whitespace handling is explicit: we require one-or-more space/tab
-// between the number and the unit name when a number IS given.
-quantity = ${ SOI ~ (number ~ WHITESPACE+)? ~ unit_name ~ EOI }
+// A full quantity: "10 meter", "5 kg*m/s^2", "mile".
+quantity = { SOI ~ number? ~ unit_expr ~ EOI }
 
-// A bare unit reference, used when parsing CLI target units ("m", "km/h").
-unit_only = ${ SOI ~ unit_name ~ EOI }
+// A bare unit expression for the CLI target argument: "m/s", "kg*m/s^2".
+unit_only = { SOI ~ unit_expr ~ EOI }
 
-// ---- Tokens (atomic) ------------------------------------------------------
+// ---- Unit expression grammar ------------------------------------------------
+
+// Division binds looser than multiplication:
+//   unit_expr → term ("/" term)*
+//   term      → factor ("*" factor | factor)*
+//   factor    → atom ("^" integer)?
+//   atom      → unit_name | "(" unit_expr ")"
+//
+// Implicit multiplication (juxtaposition): "kg m" = "kg*m".
+// This is achieved by `term → factor (("*" ~ factor) | factor)*`
+// where the second alternative handles juxtaposition.
+unit_expr = { term ~ ("/" ~ term)* }
+term      = { factor ~ (("*" ~ factor) | factor)* }
+factor    = { atom ~ ("^" ~ integer)? }
+atom      = { unit_name | "(" ~ unit_expr ~ ")" }
+
+// Integer exponent (positive or negative): 2, -1, 3
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+
+// ---- Tokens (atomic) --------------------------------------------------------
+
+// Unit identifier. Starts with a letter, µ, or °; followed by alphanumerics
+// or underscores. No longer includes "/" or "*" — those are operators now.
+unit_name = @{
+    (ASCII_ALPHA | "µ" | "°") ~ (ASCII_ALPHANUMERIC | "_")*
+}
 
 // Signed decimal with optional fractional part and optional scientific
-// exponent. `^"e"` is pest's case-insensitive literal — matches both "e"
-// and "E". Examples: 10, -3.14, 6.022e23, 9.81E-2.
+// exponent. Examples: 10, -3.14, 6.022e23, 9.81E-2.
 number = @{
     "-"?
     ~ ASCII_DIGIT+
@@ -30,16 +55,7 @@ number = @{
     ~ (^"e" ~ "-"? ~ ASCII_DIGIT+)?
 }
 
-// Unit identifier. Starts with a letter (ASCII or the Greek µ for "micro"),
-// followed by alphanumerics, underscores, or the two compound separators
-// "/" and "*". The compound-separator admission keeps Phase-2 aliases like
-// "m/s" parseable as a single token — no grammar rewrite needed when
-// Phase 3 introduces real compound parsing.
-unit_name = @{
-    (ASCII_ALPHA | "µ") ~ (ASCII_ALPHANUMERIC | "_" | "/" | "*")*
-}
-
-// ---- Implicit whitespace (used only when referenced explicitly) ----------
-// Defined as a named rule so it can be referenced inside compound-atomic
-// rules. Not auto-inserted because our top-level rules are atomic.
+// ---- Implicit whitespace ----------------------------------------------------
+// In non-atomic rules, pest auto-inserts `WHITESPACE*` between sequential
+// elements, allowing "kg * m / s ^ 2" and "kg*m/s^2" to both parse.
 WHITESPACE = _{ " " | "\t" }

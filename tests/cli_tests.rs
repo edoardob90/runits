@@ -177,3 +177,45 @@ fn missing_target_arg_is_usage_error() {
         .code(2)
         .stderr(predicate::str::contains("required"));
 }
+
+// ---- Temperature conversions (Phase 3) ----
+
+#[test]
+fn celsius_to_fahrenheit() {
+    runits()
+        .arg("100 degC")
+        .arg("degF")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("212"));
+}
+
+#[test]
+fn fahrenheit_to_celsius() {
+    runits()
+        .arg("98.6 degF")
+        .arg("degC")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("37"));
+}
+
+#[test]
+fn kelvin_to_celsius() {
+    runits()
+        .arg("0 kelvin")
+        .arg("degC")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-273.15"));
+}
+
+#[test]
+fn degree_sign_alias_works() {
+    runits()
+        .arg("100 °C")
+        .arg("°F")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("212"));
+}

@@ -29,6 +29,12 @@ pub enum RUnitsError {
         to_dim: String,
     },
 
+    /// Affine units (e.g., temperature scales) cannot form compound units.
+    #[error(
+        "cannot compose affine unit '{0}' in multiplication/division (temperature units cannot form compound units)"
+    )]
+    AffineComposition(String),
+
     /// Input didn't match the quantity grammar. The inner pest error
     /// carries a source-span pointer for precise user feedback. Boxed so
     /// `RUnitsError` stays small (clippy's `result_large_err` guidance).

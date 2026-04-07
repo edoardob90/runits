@@ -1,9 +1,6 @@
-//! clap-derived CLI argument layout for Phase 2.
+//! clap-derived CLI argument layout.
 //!
-//! Two positional args: a quantity (number + source unit) and a target unit.
-//! Doc comments on each field become clap's help text — keep them one line
-//! each and user-facing. Phase 3+ will add flags here (--precision,
-//! --scientific, --verbose, subcommands for REPL / constants / etc.).
+//! Two positional args (quantity, target) plus formatting flags.
 
 use clap::Parser;
 
@@ -16,4 +13,16 @@ pub struct Cli {
 
     /// Target unit. Example: "m"
     pub target: String,
+
+    /// Number of significant figures in output (default: 6)
+    #[arg(short, long)]
+    pub precision: Option<usize>,
+
+    /// Force scientific notation in output
+    #[arg(short, long)]
+    pub scientific: bool,
+
+    /// Expand result unit to base SI components (e.g., newton → kg*m/s^2)
+    #[arg(long)]
+    pub to_base: bool,
 }

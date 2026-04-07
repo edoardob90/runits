@@ -10,4 +10,4 @@ pub mod unit;
 // Can do: use runits::units::Dimension;
 pub use dimension::Dimension;
 pub use quantity::Quantity;
-pub use unit::Unit;
+pub use unit::{ConversionKind, Unit};

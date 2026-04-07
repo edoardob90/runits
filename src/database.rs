@@ -13,8 +13,44 @@
 
 use crate::units::Unit;
 use crate::units::dimension::Dimension;
+use crate::units::unit::ConversionKind;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+/// SI metric prefixes: (long_name, symbol, scale_factor).
+/// Sorted by symbol length descending so "da" is tried before "d".
+const SI_PREFIXES: &[(&str, &str, f64)] = &[
+    ("yotta", "Y", 1e24),
+    ("zetta", "Z", 1e21),
+    ("exa", "E", 1e18),
+    ("peta", "P", 1e15),
+    ("tera", "T", 1e12),
+    ("giga", "G", 1e9),
+    ("mega", "M", 1e6),
+    ("kilo", "k", 1e3),
+    ("hecto", "h", 1e2),
+    ("deca", "da", 1e1),
+    ("deci", "d", 1e-1),
+    ("centi", "c", 1e-2),
+    ("milli", "m", 1e-3),
+    ("micro", "µ", 1e-6),
+    ("nano", "n", 1e-9),
+    ("pico", "p", 1e-12),
+    ("femto", "f", 1e-15),
+    ("atto", "a", 1e-18),
+    ("zepto", "z", 1e-21),
+    ("yocto", "y", 1e-24),
+];
+
+/// IEC binary prefixes for information units only.
+const BINARY_PREFIXES: &[(&str, &str, f64)] = &[
+    ("kibi", "Ki", 1024.0),
+    ("mebi", "Mi", 1_048_576.0),
+    ("gibi", "Gi", 1_073_741_824.0),
+    ("tebi", "Ti", 1_099_511_627_776.0),
+    ("pebi", "Pi", 1_125_899_906_842_624.0),
+    ("exbi", "Ei", 1_152_921_504_606_846_976.0),
+];
 
 /// A collection of units keyed by every acceptable input alias.
 ///
@@ -36,12 +72,68 @@ impl UnitDatabase {
 
     /// Look up a unit by name or alias.
     ///
-    /// Returns an owned [`Unit`] (cheap clone: a name `String` + small
-    /// `HashMap` of dimensions) or `None` if the alias is unknown. Owned is
-    /// simpler than borrowed here — the parser wraps the result in a
-    /// `Quantity`, which needs to own its unit anyway.
+    /// First tries a direct lookup (O(1)). If that fails, tries stripping
+    /// SI prefixes (e.g., "Gmeter" → giga + meter) and binary prefixes
+    /// (e.g., "kibibyte" → kibi + byte). Direct lookup always wins, so
+    /// existing aliases like "min" (minute) are never misinterpreted as
+    /// "m" (milli) + "in" (inch).
     pub fn lookup(&self, name: &str) -> Option<Unit> {
-        self.units.get(name).cloned()
+        // 1. Direct lookup — fast path, handles all seeded aliases.
+        if let Some(u) = self.units.get(name) {
+            return Some(u.clone());
+        }
+        // 2. Try SI prefix stripping (any dimension).
+        if let Some(u) = self.try_prefix_strip(name, SI_PREFIXES, false) {
+            return Some(u);
+        }
+        // 3. Try binary prefix stripping (information units only).
+        self.try_prefix_strip(name, BINARY_PREFIXES, true)
+    }
+
+    /// Try to split `name` into a known prefix + a known base unit.
+    ///
+    /// For each prefix, tries the long form first ("kilo"), then the symbol
+    /// ("k"). Within symbols, longer prefixes are tried first (the table is
+    /// pre-sorted) so "da" beats "d".
+    ///
+    /// When `info_only` is true, only matches base units with an Information
+    /// dimension (prevents "kibibar" or similar nonsense).
+    fn try_prefix_strip(
+        &self,
+        name: &str,
+        prefixes: &[(&str, &str, f64)],
+        info_only: bool,
+    ) -> Option<Unit> {
+        for &(long, short, scale) in prefixes {
+            // Try long name first, then symbol — both in the same loop.
+            for prefix in [long, short] {
+                if let Some(remainder) = name.strip_prefix(prefix) {
+                    if remainder.is_empty() {
+                        continue;
+                    }
+                    if let Some(base_unit) = self.units.get(remainder) {
+                        // Skip affine units — "kilocelsius" is nonsense.
+                        if base_unit.is_affine() {
+                            continue;
+                        }
+                        // When restricted to info, check the base unit's dimensions.
+                        if info_only && !base_unit.dimensions.contains_key(&Dimension::Information)
+                        {
+                            continue;
+                        }
+                        // Build the prefixed unit with scaled factor.
+                        let mut prefixed = base_unit.clone();
+                        prefixed.name = name.to_string();
+                        match &mut prefixed.conversion {
+                            ConversionKind::Linear(f) => *f *= scale,
+                            ConversionKind::Affine { .. } => continue,
+                        }
+                        return Some(prefixed);
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// How many aliases are currently registered (every alias counts).
@@ -84,6 +176,11 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(map, &["second", "s", "sec", "seconds"], Unit::second());
     add(map, &["ampere", "A", "amps", "amperes"], Unit::ampere());
     add(map, &["kelvin", "K"], Unit::kelvin());
+    // Absolute temperature scales (affine conversions)
+    add(map, &["celsius", "degC", "°C"], Unit::celsius());
+    add(map, &["fahrenheit", "degF", "°F"], Unit::fahrenheit());
+    add(map, &["rankine", "Ra"], Unit::rankine());
+    add(map, &["reaumur", "Re", "°Re"], Unit::reaumur());
     add(map, &["mole", "mol", "moles"], Unit::mole());
     add(map, &["candela", "cd"], Unit::candela());
     add(map, &["radian", "rad", "radians"], Unit::radian());
@@ -326,6 +423,199 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
         &["rpm"],
         Unit::new("rpm", 1.0 / 60.0, &[(Dimension::Time, -1)]),
     );
+
+    // ---- Force (M·L·T⁻²) ----
+    let force_dims = &[
+        (Dimension::Mass, 1),
+        (Dimension::Length, 1),
+        (Dimension::Time, -2),
+    ];
+    add(
+        map,
+        &["newton", "N", "newtons"],
+        Unit::new("newton", 1.0, force_dims),
+    );
+    add(map, &["dyne", "dyn"], Unit::new("dyne", 1e-5, force_dims));
+    add(
+        map,
+        &["pound_force", "lbf"],
+        Unit::new("pound_force", 4.448222, force_dims),
+    );
+    add(
+        map,
+        &["kilogram_force", "kgf"],
+        Unit::new("kilogram_force", 9.80665, force_dims),
+    );
+
+    // ---- Pressure (M·L⁻¹·T⁻²) ----
+    let pressure_dims = &[
+        (Dimension::Mass, 1),
+        (Dimension::Length, -1),
+        (Dimension::Time, -2),
+    ];
+    add(
+        map,
+        &["pascal", "Pa", "pascals"],
+        Unit::new("pascal", 1.0, pressure_dims),
+    );
+    add(map, &["bar", "bars"], Unit::new("bar", 1e5, pressure_dims));
+    add(
+        map,
+        &["atmosphere", "atm"],
+        Unit::new("atmosphere", 101_325.0, pressure_dims),
+    );
+    add(
+        map,
+        &["torr", "Torr"],
+        Unit::new("torr", 101_325.0 / 760.0, pressure_dims),
+    );
+    add(
+        map,
+        &["mmHg"],
+        Unit::new("mmHg", 133.322387415, pressure_dims),
+    );
+    add(
+        map,
+        &["psi", "PSI"],
+        Unit::new("psi", 6894.757, pressure_dims),
+    );
+    add(map, &["inHg"], Unit::new("inHg", 3386.389, pressure_dims));
+
+    // ---- Energy (M·L²·T⁻²) ----
+    let energy_dims = &[
+        (Dimension::Mass, 1),
+        (Dimension::Length, 2),
+        (Dimension::Time, -2),
+    ];
+    add(
+        map,
+        &["joule", "J", "joules"],
+        Unit::new("joule", 1.0, energy_dims),
+    );
+    add(
+        map,
+        &["calorie", "cal", "calories"],
+        Unit::new("calorie", 4.184, energy_dims),
+    );
+    add(
+        map,
+        &["BTU", "Btu"],
+        Unit::new("BTU", 1055.05585262, energy_dims),
+    );
+    add(
+        map,
+        &["kilowatt_hour", "kWh"],
+        Unit::new("kilowatt_hour", 3.6e6, energy_dims),
+    );
+    add(
+        map,
+        &["electronvolt", "eV"],
+        Unit::new("electronvolt", 1.602_176_634e-19, energy_dims),
+    );
+
+    // ---- Power (M·L²·T⁻³) ----
+    let power_dims = &[
+        (Dimension::Mass, 1),
+        (Dimension::Length, 2),
+        (Dimension::Time, -3),
+    ];
+    add(
+        map,
+        &["watt", "W", "watts"],
+        Unit::new("watt", 1.0, power_dims),
+    );
+    add(
+        map,
+        &["horsepower", "hp"],
+        Unit::new("horsepower", 735.49875, power_dims),
+    );
+
+    // ---- Historical length ----
+    add(
+        map,
+        &["furlong", "furlongs"],
+        Unit::new("furlong", 201.168, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["league", "leagues"],
+        Unit::new("league", 4828.032, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["fathom", "fathoms"],
+        Unit::new("fathom", 1.8288, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["rod", "rods"],
+        Unit::new("rod", 5.0292, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["chain", "chains"],
+        Unit::new("chain", 20.1168, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["cubit", "cubits"],
+        Unit::new("cubit", 0.4572, &[(Dimension::Length, 1)]),
+    );
+
+    // ---- Cooking (volume) ----
+    // Volume dims: L³
+    let volume_dims = &[(Dimension::Length, 3)];
+    add(
+        map,
+        &["tablespoon", "tbsp"],
+        Unit::new("tablespoon", 1.5e-5, volume_dims),
+    );
+    add(
+        map,
+        &["teaspoon", "tsp"],
+        Unit::new("teaspoon", 5e-6, volume_dims),
+    );
+
+    // ---- Astronomical ----
+    add(
+        map,
+        &["astronomical_unit", "AU", "au"],
+        Unit::new(
+            "astronomical_unit",
+            1.495_978_707e11,
+            &[(Dimension::Length, 1)],
+        ),
+    );
+    add(
+        map,
+        &["light_year", "ly"],
+        Unit::new("light_year", 9.4607e15, &[(Dimension::Length, 1)]),
+    );
+    add(
+        map,
+        &["parsec", "pc"],
+        Unit::new("parsec", 3.0857e16, &[(Dimension::Length, 1)]),
+    );
+
+    // ---- Radioactivity ----
+    add(
+        map,
+        &["becquerel", "Bq"],
+        Unit::new("becquerel", 1.0, &[(Dimension::Time, -1)]),
+    );
+    add(
+        map,
+        &["curie", "Ci"],
+        Unit::new("curie", 3.7e10, &[(Dimension::Time, -1)]),
+    );
+    // Absorbed dose (L²·T⁻²)
+    let dose_dims = &[(Dimension::Length, 2), (Dimension::Time, -2)];
+    add(map, &["gray", "Gy"], Unit::new("gray", 1.0, dose_dims));
+    add(
+        map,
+        &["sievert", "Sv"],
+        Unit::new("sievert", 1.0, dose_dims),
+    );
 }
 
 /// Rename a unit in-place (the `Mul`/`Div` impls auto-generate names like
@@ -397,5 +687,81 @@ mod tests {
         let db = global();
         assert!(!db.is_empty());
         assert!(db.lookup("m").is_some());
+    }
+
+    // ---- SI prefix stripping tests ----
+
+    #[test]
+    fn si_prefix_long_name() {
+        let db = UnitDatabase::new();
+        // "Gmeter" → giga + meter = 1e9 factor
+        let u = db.lookup("Gmeter").unwrap();
+        assert_eq!(u.conversion_factor(), 1e9);
+        assert_eq!(u.dimension_string(), "length");
+    }
+
+    #[test]
+    fn si_prefix_symbol() {
+        let db = UnitDatabase::new();
+        // "Ms" → mega + second = 1e6 factor
+        let u = db.lookup("Ms").unwrap();
+        assert_eq!(u.conversion_factor(), 1e6);
+        assert_eq!(u.dimension_string(), "time");
+    }
+
+    #[test]
+    fn si_prefix_does_not_override_direct_alias() {
+        let db = UnitDatabase::new();
+        // "min" is minute (direct alias), NOT milli + "in" (inch)
+        let u = db.lookup("min").unwrap();
+        assert_eq!(u.name, "minute");
+    }
+
+    #[test]
+    fn si_prefix_existing_prefixed_unit_wins() {
+        let db = UnitDatabase::new();
+        // "km" is already in DB as "kilometer" — direct lookup wins
+        let u = db.lookup("km").unwrap();
+        assert_eq!(u.name, "kilometer");
+    }
+
+    #[test]
+    fn si_prefix_skips_affine_units() {
+        let db = UnitDatabase::new();
+        // "kilocelsius" should not match — celsius is affine
+        assert!(db.lookup("kilocelsius").is_none());
+    }
+
+    #[test]
+    fn binary_prefix_long_name() {
+        let db = UnitDatabase::new();
+        // "kibibyte" → kibi + byte = 1024 * 8 bits
+        let u = db.lookup("kibibyte").unwrap();
+        assert_eq!(u.conversion_factor(), 8.0 * 1024.0);
+        assert_eq!(u.dimension_string(), "information");
+    }
+
+    #[test]
+    fn binary_prefix_symbol() {
+        let db = UnitDatabase::new();
+        // "Kibyte" → Ki + byte = 1024 * 8 bits
+        let u = db.lookup("Kibyte").unwrap();
+        assert_eq!(u.conversion_factor(), 8.0 * 1024.0);
+    }
+
+    #[test]
+    fn binary_prefix_restricted_to_info() {
+        let db = UnitDatabase::new();
+        // "kibiliter" should NOT match — liter is not an information unit
+        assert!(db.lookup("kibiliter").is_none());
+    }
+
+    #[test]
+    fn si_prefix_deca_before_deci() {
+        let db = UnitDatabase::new();
+        // "dag" → should try "da" (deca) + "g" (gram) = 10 * 0.001 = 0.01
+        // NOT "d" (deci) + "ag" (no such unit)
+        let u = db.lookup("dag").unwrap();
+        assert!((u.conversion_factor() - 0.01).abs() < 1e-15);
     }
 }

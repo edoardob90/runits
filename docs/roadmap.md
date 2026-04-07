@@ -14,11 +14,11 @@ This file is embedded into the rustdoc site and rendered as a chapter there.
 | 1 — Core Data Structures | ✅ Complete | `Dimension`, `Unit`, `Quantity` with full dimensional analysis; 7 SI base units + angle/information; `Mul`/`Div` traits for compound units |
 | 1.5 — Documentation Foundation | ✅ Complete | Rustdoc on all public APIs; doc-tests; GitHub Actions → GitHub Pages |
 | 2 — Functional CLI | ✅ Complete | clap, pest parser, UnitDatabase (~80 aliases), thiserror; 6-sig-fig adaptive output formatter; bare unit names accepted |
-| 3 — Rich Conversions | ⏳ Next | Temperature (affine), SI prefixes, compound parsing, `--precision`/`--scientific` flags |
-| 4 — Interactive Experience | ⏳ Planned | REPL, fuzzy suggestions, colors, config |
+| 3 — Rich Conversions | ✅ Complete | ConversionKind enum (affine); temperature (C/F/K/Ra/Ré); SI prefixes (24) + binary (6); compound-unit grammar (`kg*m/s^2`); `--precision`/`--scientific`/`--to-base` flags; annotations registry; ~63 units + force/pressure/energy/power/historical/cooking/astronomical/radioactivity |
+| 4 — Interactive Experience | ⏳ Next | REPL, fuzzy suggestions, colors, Unicode rendering, config |
 | 5 — Extensibility | ⏳ Planned | Custom units, constants, expressions |
 
-**Test suite (latest):** 47 unit tests + 9 doc tests + 14 integration tests, all passing. Dependencies: clap, pest, pest_derive, thiserror (dev: assert_cmd, predicates). Clean clippy, clean fmt.
+**Test suite (latest):** 79 unit tests + 9 doc tests + 18 integration tests = 106 total, all passing. Dependencies: clap, pest, pest_derive, thiserror (dev: assert_cmd, predicates). Clean clippy, clean fmt.
 
 For a detailed change history, see `git log`.
 
@@ -63,7 +63,6 @@ For a detailed change history, see `git log`.
 - **Compound-unit parsing** (`kg*m/s^2`, `5 kg/m^3`) via extended `pest` grammar
 - **Output formatting** — precision control, scientific notation, significant figures
 - **Result representation policy** — default keeps named derived units in compact compound form (Numbat-style: Coulomb's constant renders as `8.99e9 m/F`); opt-in `--to-base` expands every named unit to the 7 SI primitives (GNU units-style: same value becomes `8.99e9 kg·m³·A⁻²·s⁻⁴`). Default optimizes for readability and "paste into a report"; opt-in optimizes for dimensional analysis and teaching. The tool is a modern GNU Units, not a Numbat competitor — so both ship.
-- **Stretch:** GNU `units.dat` parser for instant access to ~2000 more units
 
 **Design decision — affine conversions.** The current `Unit` uses a single `conversion_factor: f64`. Temperature requires `scale + offset` (e.g., °F = (K − 273.15) × 9/5 + 32). Two viable designs:
 
@@ -84,10 +83,12 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 - `rustyline` REPL with persistent history (`~/.config/runits/history`)
 - **Fuzzy suggestions** on unknown units via `strsim` (Levenshtein / Jaro-Winkler)
 - **Colored output** via `owo-colors` (respects `NO_COLOR` env var)
+- **Unicode unit rendering** — middle-dot for multiplication (`kg·m`), superscript digits for exponents (`s⁻²`), proper minus signs. CLI output is piped/copy-pasted, so plain ASCII by default; REPL and `--pretty` opt-in to Unicode.
 - **TOML config** at `~/.config/runits/config.toml` — default precision, color on/off, preferred output format
 - **Shell completions** via `clap_complete` (bash/zsh/fish)
 - **Output modes**: plain (default), verbose (show conversion chain), JSON (scriptable)
 - **Batch mode**: one query per line from stdin
+- **Physical-quantity annotations in REPL** — the `[Velocity]`, `[Force]` etc. dimension-name annotations (Phase 3 registry) are shown only in interactive REPL mode, following Numbat's convention. CLI output stays clean for piping. Annotations may be colored/formatted when `owo-colors` is available.
 
 **Deliverable:** `runits` (no args) opens a REPL; typos suggest corrections; config respected.
 
@@ -105,6 +106,12 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 - **Unit arithmetic** (`5 meter + 3 foot` with dimensional checking)
 - **Scale chaining** (`10 ft 5 in` parsed as compound length)
 - **Reverse lookup** — given a dimensioned value, suggest matching units/constants (`runits --what "9.81 m/s^2"` → `gravity (g)`)
+- **GNU `definitions.units` incremental parser** with **tiered database loading**:
+  - **Tier 1 — Builtin (default):** Hand-seeded ~63 units + dynamic SI/binary prefixes. Zero I/O, instant startup. Sufficient for everyday conversions.
+  - **Tier 2 — Standard:** Tier 1 + simple `name definition` lines from GNU `definitions.units` where the definition resolves to known units. Adds ~500–1000 units (pressure, cooking, historical, etc.). Parses on first use or at startup.
+  - **Tier 3 — Full:** Tier 2 + recursive definition resolution (`foot 12 inch` → look up `inch`), fraction syntax (`5|9`), `!include` for personal units files. ~2000–3000 units.
+  - Selection via `--db` flag (`--db builtin|standard|full`) or TOML config default. REPL defaults to standard; one-shot CLI defaults to builtin for speed.
+  - Skips directives (`!locale`, `!set`, `!var`), function definitions (`tempC(x)`), and base markers (`m !`). Logs skipped lines at `--debug` level.
 
 **Deliverable:** `runits` becomes a dimensional micro-calculator.
 
@@ -162,13 +169,13 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 12 | E=mc² energy↔mass equivalence | Deferred |
 | 13 | Frequency↔wavelength via c (λν=c) | 5 |
 | 14 | Fractional display (`2.5 ft` → `2 ft 6 in`) | 3 |
-| 15 | Named physical-quantity annotations: `3 m/s [Velocity]`, `9.81 m/s² [Acceleration]` via a dimension-signature → name registry (display side only, not type-system work) | 3 |
+| 15 | Named physical-quantity annotations: `3 m/s [Velocity]`, `9.81 m/s² [Acceleration]` via a dimension-signature → name registry (display side only, not type-system work). Registry built in Phase 3; display is REPL-only (Phase 4), following Numbat's convention — CLI output stays pipe-friendly. | 3/4 |
 
 ### Database & Data Enrichment
 
 | # | Feature | Phase |
 |---|---|---|
-| 1 | GNU `units.dat` parser (~2000 units out of the box) | 3 (stretch) |
+| 1 | GNU `definitions.units` incremental parser with tiered loading (builtin/standard/full) | 5 |
 | 2 | Unit aliases (m, meter, meters, metres) | 2 |
 | 3 | Historical (cubit, league, furlong, stone, rod, chain, perch) | 3 |
 | 4 | Cooking (cup, tbsp, tsp, fl oz, gill, drachm) | 3 |

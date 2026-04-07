@@ -103,6 +103,24 @@ impl Dimension {
             Dimension::Currency => "currency",
         }
     }
+
+    /// Returns the SI base unit symbol for this dimension.
+    ///
+    /// Used by `--to-base` to render dimensions as unit symbols.
+    pub fn base_symbol(&self) -> &'static str {
+        match self {
+            Dimension::Length => "m",
+            Dimension::Mass => "kg",
+            Dimension::Time => "s",
+            Dimension::Temperature => "K",
+            Dimension::Current => "A",
+            Dimension::AmountOfSubstance => "mol",
+            Dimension::LuminousIntensity => "cd",
+            Dimension::Angle => "rad",
+            Dimension::Information => "bit",
+            Dimension::Currency => "¤",
+        }
+    }
 }
 
 /// Type alias for dimension maps used in unit definitions.
