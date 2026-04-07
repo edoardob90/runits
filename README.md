@@ -1,53 +1,71 @@
-# RUnits - A GNU Units-inspired Converter in Rust
+# RUnits - A GNU Units-inspired converter in Rust
 
-RUnits is a powerful and user-friendly command-line unit converter built in Rust, inspired by the legendary GNU `units` program. It supports direct conversions, compound units, and an interactive mode for complex queries.
-
-This project is built with a focus on clean code, robust error handling, and an extensible architecture, making it a great example of idiomatic Rust.
+RUnits is a command-line unit converter built in Rust, inspired by GNU `units`. It supports direct conversions, compound units, SI and binary prefixes, and temperature scales — all with type-safe dimensional analysis.
 
 ## Usage Examples
 
 ### Direct Conversion
-Provide the quantity to convert and the desired target unit.
 
 ```
 $ runits "2.5 miles" "km"
-> 4.02336 km
+4.02336 km
 ```
 
-### Compound & Complex Units
-RUnits can parse and convert compound units involving multiplication, division, and exponents.
+### Compound Units
 
 ```
 $ runits "100 km/hr" "m/s"
-> 27.7777... m/s
+27.7778 m/s
 
-$ runits "2000 revolutions/minute" "rad/s"
-> 209.4395... rad/s
+$ runits "1 kgf" "newton"
+9.80665 newton
 ```
 
-### Interactive Mode (REPL)
-
-For multiple conversions, you can start the interactive mode by running `runits` with no arguments.
+### Temperature Scales
 
 ```
-$ runits
-RUnits Interactive Mode. Press Ctrl+D to exit.
-You have: 2 lightyears
-You want: parsecs
-> 0.61346 pc
-You have: 150 pounds * 9.8 m/s^2
-You want: newtons
-> 667.233 N
-You have:
+$ runits "98.6 F" "C"
+37 C
 
+$ runits "0 C" "K"
+273.15 K
+```
+
+### SI & Binary Prefixes
+
+```
+$ runits "1 GiB" "MiB"
+1024 MiB
+
+$ runits "5 km" "m"
+5000 m
+```
+
+### Output Formatting
+
+```
+$ runits --precision 10 "1 mile" "meter"
+1609.344000 meter
+
+$ runits --scientific "1 AU" "km"
+1.49598e8 km
+
+$ runits --to-base "1 newton" "kg*m/s^2"
+1 kg*m*s^-2
 ```
 
 ## Features
-- **Simple & Compound Unit Parsing**: Handles units like kilograms, m/s, and kg*m/s^2.
-- **Extensive Unit Database**: Powered by a parser for the comprehensive GNU `units.dat` file.
-- **Interactive REPL**: For quick, successive conversions.
-- **Type-Safe Logic**: Prevents nonsensical conversions (e.g., meters to seconds).
-- **Clear Error Messages**: Provides helpful feedback for typos or invalid operations.
+- **Compound-unit parsing**: handles `kg*m/s^2`, `km/hr`, and arbitrary combinations
+- **SI prefixes** (yotta → yocto, 24 levels) and **binary prefixes** (Ki → Ei)
+- **Temperature conversions**: Celsius, Fahrenheit, Kelvin, Rankine, Réaumur (affine)
+- **~63 built-in units** spanning length, mass, time, force, pressure, energy, power, cooking, astronomical, radioactivity, and more
+- **Type-safe dimensional analysis**: prevents nonsensical conversions (e.g., meters to seconds)
+- **Output control**: `--precision`, `--scientific`, `--to-base` flags
+- **Clear error messages** for unknown units, incompatible dimensions, and parse failures
+
+### Planned
+- Interactive REPL with fuzzy suggestions and colored output (Phase 4)
+- User-defined units, physical constants, math expressions (Phase 5)
 
 ## Contributing & Setup
 
@@ -67,11 +85,7 @@ The binary will be located at target/release/runits.
 
 4. Run the Application: You can run the application directly using Cargo:
 ```
-# Example direct conversion
 cargo run -- "10 ft" "m"
-
-# Example interactive mode
-cargo run
 ```
 
 5. Run Tests: Ensure all tests pass before submitting a contribution.
@@ -81,12 +95,12 @@ cargo test
 
 ## About This Project
 
-RUnits began as a learning project to deeply explore core Rust concepts through a practical, real-world application. The primary goal was to build a tool that is both useful and a clear example of high-quality Rust code.
+RUnits is a learning-meets-polished-tool project — roughly 70% practical tool, 30% Rust learning vehicle.
 
-While inspired by GNU units, the goal is **not** to achieve 1:1 feature parity, or compete with a much more advanced calculator like [numbat](https://numbat.dev/). Instead, the focus is on a modern implementation with an emphasis on:
+While inspired by GNU `units`, the goal is **not** feature parity or competing with [numbat](https://numbat.dev/). The focus is on a modern implementation emphasizing:
 
-- **Correctness**: Leveraging Rust's type system to prevent dimensional errors.
-- **Clarity**: Writing code that is easy to read, maintain, and contribute to.
-- **Ergonomics**: Creating a command-line tool that is a pleasure to use.
+- **Correctness**: Leveraging Rust's type system to prevent dimensional errors
+- **Clarity**: Code that is easy to read, maintain, and contribute to
+- **Ergonomics**: A command-line tool that is a pleasure to use
 
-The project relies on parsing the standard GNU `units.dat` file for its extensive database, but all conversion and parsing logic is a fresh implementation in Rust.
+All conversion and parsing logic is a fresh Rust implementation using `pest` for grammar-based parsing and `thiserror` for error handling. See the [roadmap](docs/roadmap.md) for detailed status and plans.

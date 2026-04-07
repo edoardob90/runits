@@ -58,13 +58,21 @@ runits/
 │   ├── README.md          # docs index
 │   ├── roadmap.md         # ⚓ source of truth: status, phases, feature catalog
 │   └── learning-notes.md  # Rust concepts learned
+├── tests/
+│   └── cli_tests.rs       # assert_cmd integration tests
 └── src/
     ├── lib.rs             # crate root, re-exports, embeds roadmap.md into rustdoc
-    ├── main.rs            # CLI entry (currently demo code)
+    ├── main.rs            # CLI entry point
+    ├── cli.rs             # clap-derived Cli struct
+    ├── parser.rs          # pest parser + parse-tree walker
+    ├── database.rs        # UnitDatabase with alias lookup, SI/binary prefixes
+    ├── error.rs           # unified error enum via thiserror
+    ├── annotations.rs     # dimension-signature → physical-quantity name registry
+    ├── grammar.pest       # pest grammar for quantity + compound-unit parsing
     └── units/
         ├── mod.rs         # module re-exports
         ├── dimension.rs   # Dimension enum + DimensionMap
-        ├── unit.rs        # Unit struct, arithmetic, factory methods
+        ├── unit.rs        # Unit struct, ConversionKind (linear/affine), arithmetic
         └── quantity.rs    # Quantity struct, conversion, errors
 ```
 
@@ -74,7 +82,7 @@ runits/
 
 - **Language:** Rust (edition 2024)
 - **Toolchain:** rustc 1.94.1, cargo 1.94.1 (as of 2026-03)
-- **Dependencies (current):** `clap` (derive), `pest` + `pest_derive`, `thiserror`; dev: `assert_cmd`, `predicates`. Later phases add REPL / config / fuzzy-match crates — see table below.
+- **Dependencies (current):** `clap` (derive), `pest` + `pest_derive`, `thiserror`; dev: `assert_cmd`, `predicates`. Phase 4 adds REPL / config / fuzzy-match crates — see table below.
 
 ## Build & Development Commands
 
@@ -94,7 +102,7 @@ cargo clippy -- -D warnings          # lint, warnings-as-errors
 
 ## Dependencies by Phase
 
-Phase 2 entries below are **installed now**; later-phase entries will be added via `cargo add` as each phase begins.
+Phases 2–3 entries below are **installed now**; later-phase entries will be added via `cargo add` as each phase begins. (Phase 3 required no new crate dependencies.)
 
 | Crate | Phase | Purpose | Status |
 |---|---|---|---|
@@ -133,6 +141,6 @@ Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 
 - **Default mode: Claude Code implements the majority of the code.** Keep changes focused, use liberal comments to explain *why* (not *what*), and ship working increments. This is a 70/30 polished-tool/learning project per the roadmap — do not turn every implementation into a tutorial.
 - **Hand off when the learning is worth it.** When you hit a genuinely interesting Rust concept — trait objects, lifetimes, advanced pattern matching, clever ownership design, unsafe, macros, async internals, custom derive, etc. — pause, offer a concise hint with code comments marking the spot, and **ask the user if they want to take the lead on that specific piece**. The user decides; don't guess. Good candidates for hand-off: first encounter with a concept in the project, a design decision with multiple valid approaches, idiomatic-Rust "aha" moments.
-- **Expect the learning bar to rise.** Phase 1 covered basics (structs, enums, HashMap, Result). Upcoming phases introduce harder material: parser-generator macros (`pest`) and grammar files, error-type ergonomics (`thiserror`), static/lazy initialization, trait objects (`Box<dyn>`), affine conversions, REPL loop lifetimes, expression evaluators, possibly `unsafe` or custom derive. Flag these moments explicitly when they appear — the user may want to slow down and write them personally even if earlier decisions were "Claude implements."
+- **Expect the learning bar to rise.** Phases 1–3 covered structs, enums, HashMap, Result, parser-generator macros (`pest`), grammar files, error-type ergonomics (`thiserror`), affine conversions, and compound-unit algebra. Upcoming phases introduce: REPL loop lifetimes (`rustyline`), static/lazy initialization, trait objects (`Box<dyn>`), expression evaluators, config deserialization (`serde`), possibly `unsafe` or custom derive. Flag these moments explicitly when they appear — the user may want to slow down and write them personally even if earlier decisions were "Claude implements."
 - **Code review mode:** when the user asks you to review their code, check understanding by asking targeted questions about *why* particular choices were made, not just whether they compile.
 - **Whenever a change touches or implies a change to the project's plan, update `docs/roadmap.md` first** (see the "Working with the Roadmap" section above).
