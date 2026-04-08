@@ -15,7 +15,7 @@
 
 ## Working with the Roadmap (READ FIRST)
 
-**[`docs/roadmap.md`](docs/roadmap.md) is the single source of truth** for what is done, what is active, and what comes next. It is embedded into the rustdoc site via `include_str!` in `src/lib.rs`, so it is also a first-class chapter of the API docs.
+**[`docs/roadmap.md`](docs/roadmap.md) is the single source of truth** for what is done, what is active, and what comes next.
 
 ### Non-negotiable workflow rules
 
@@ -57,9 +57,9 @@ runits/
 ├── LICENSE                # MIT
 ├── .github/workflows/     # CI: docs build + deploy to GitHub Pages
 ├── docs/
-│   ├── README.md          # docs index
-│   ├── roadmap.md         # ⚓ source of truth: status, phases, feature catalog
-│   └── learning-notes.md  # Rust concepts learned
+│   ├── README.md            # docs index
+│   ├── roadmap.md           # source of truth: status, phases, feature catalog
+│   ├── gnu-units-parity.md  # feature gap analysis vs GNU Units
 ├── tests/
 │   └── cli_tests.rs       # assert_cmd integration tests
 └── src/
@@ -144,7 +144,7 @@ Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 
 - Unit tests alongside implementation (`#[cfg(test)] mod tests`)
 - Doc tests in rustdoc examples
-- Integration tests under `tests/` for CLI behavior (Phase 2+)
+- Integration tests under `tests/` for CLI behavior
 - Property-based tests for round-trip conversions (optional, see deferred track in roadmap)
 
 ---

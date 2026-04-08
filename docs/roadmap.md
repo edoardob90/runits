@@ -1,9 +1,8 @@
 # RUnits Roadmap
 
 Single source of truth for **status**, **next phases**, and the **feature catalog**.
-This file is embedded into the rustdoc site and rendered as a chapter there.
 
-**Navigation:** [Status](#status) · [Phase 2](#phase-2--functional-cli) · [Phase 3](#phase-3--rich-conversions) · [Phase 4](#phase-4--interactive-experience) · [Phase 5](#phase-5--extensibility--power-user-features) · [Deferred Track](#deferred--optional-track) · [Extras Catalog](#extras-catalog) · [Design Principles](#design-principles)
+**Navigation:** [Status](#status) · [Phase 2](#phase-2--functional-cli) · [Phase 3](#phase-3--rich-conversions) · [Phase 4](#phase-4--interactive-experience) · [Phase 5a](#phase-5a--expressions--discovery) · [Phase 5b](#phase-5b--extensibility--ux) · [Phase 5c](#phase-5c--gnu-units-database-migration) · [Deferred Track](#deferred--optional-track) · [Extras Catalog](#extras-catalog) · [Design Principles](#design-principles)
 
 ---
 
@@ -17,11 +16,13 @@ This file is embedded into the rustdoc site and rendered as a chapter there.
 | 3 — Rich Conversions | ✅ Complete | ConversionKind enum (affine); temperature (C/F/K/Ra/Ré); SI prefixes (24) + binary (6); compound-unit grammar (`kg*m/s^2`); `--precision`/`--scientific`/`--to-base` flags; annotations registry; ~63 units + force/pressure/energy/power/historical/cooking/astronomical/radioactivity |
 | 4 — Interactive Experience | ✅ Complete | REPL (rustyline), dimension-based color theme (Flexoki-inspired), Fish-style hinter + syntax highlighter, dimension-aware tab-completion, `?` help with SI base/factor/prefix, `info` command, long/short/off banner, fuzzy suggestions (strsim), `--json`/`--pretty`/`--batch`, TOML config (`~/.config/runits/config.toml`), shell completions, `Unit.prefixable`, Theme carries color flag |
 | 4.5 — Codebase Reorganization | ✅ Complete | Split database/ (seed extraction), theme.rs (from format), repl/ (helper extraction); removed roadmap from rustdoc; CLAUDE.md hierarchy |
-| 5 — Extensibility | ⏳ Active | Custom units, constants, expressions, GNU units parser |
+| 5a — Expressions & Discovery | ⏳ Active | Physical constants, math expressions, unit arithmetic, `--explain`, dimensional error messages, conformable unit discovery |
+| 5b — Extensibility & UX | ⏳ Planned | User-defined units, unit-list decomposition, scale chaining, reverse lookup |
+| 5c — Database Expansion & Definition Format | ⏳ Planned | Numbat-inspired definition format, tiered loading (linear → recursive → nonlinear), domain modules (periodic table, astronomy), `--db` flag |
 
 **Test suite (latest):** 112 unit tests + 9 doc tests + 19 integration tests = 140 total, all passing. Dependencies: clap, clap_complete, pest, pest_derive, thiserror, owo-colors, rustyline, strsim, serde, toml (dev: assert_cmd, predicates). Clean clippy, clean fmt.
 
-For a detailed change history, see `git log`.
+For a detailed change history, see `git log`. For a feature-by-feature comparison with GNU Units, see [`docs/gnu-units-parity.md`](gnu-units-parity.md).
 
 ---
 
@@ -95,26 +96,95 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 
 ---
 
-## Phase 5 — Extensibility & Power-User Features
+## Phase 5a — Expressions & Discovery
 
-**Goal:** Let users customize and compute, not just convert.
+**Goal:** Let users compute, not just convert — and find units they don't know the name of.
+
+**Scope**
+- **Physical constants** database (c, G, h, ℏ, k_B, N_A, R, e, ε₀, µ₀, g) — `runits const c` prints `2.998e8 m/s`
+- **Math expressions** in input (`runits "3*4 meter" "foot"`, `2^10 byte to kB`)
+- **Unit arithmetic** (`5 meter + 3 foot` with dimensional checking)
+- **Previous-result variable `_`** — stores the last conversion result, usable in subsequent expressions (like Python's REPL `_`)
+- **`--explain` flag** — show step-by-step conversion chain with dimensional reasoning (`100 km/h → ×1000/3600 → 27.78 m/s`). Promoted from Extras Catalog.
+- **Dimensional error messages** — colored, source-spanned errors for invalid expressions (`"cannot add Length + Time"` with the offending subexpression highlighted in its dimension color). Promoted from Deferred track — building an expression evaluator with bad errors would waste the opportunity.
+- **Conformable unit discovery** — `search velocity` in REPL lists all known units of that dimension, grouped by physical quantity. `--list-units` CLI flag. Extends the existing `?` help system.
+
+**Deliverable:** `runits` becomes a dimensional micro-calculator with rich error feedback.
+
+---
+
+## Phase 5b — Extensibility & UX
+
+**Goal:** User customization and practical output modes.
 
 **Scope**
 - **User-defined units** via `~/.config/runits/units.conf` (syntax: `furlong = 220 yard`)
-- **User-defined dimension names** in the same config (syntax: `dimension Torque = Force × Length`) — extends the annotation registry (Phase 3 feature) at runtime. Pure HashMap entries, not type-system work.
-- **Physical constants** database (c, G, h, ℏ, k_B, N_A, R, e, ε₀, µ₀, g) — `runits const c` prints `2.998e8 m/s`
-- **Math expressions** in input (`runits "3*4 meter" "foot"`)
-- **Unit arithmetic** (`5 meter + 3 foot` with dimensional checking)
-- **Scale chaining** (`10 ft 5 in` parsed as compound length)
-- **Reverse lookup** — given a dimensioned value, suggest matching units/constants (`runits --what "9.81 m/s^2"` → `gravity (g)`)
-- **GNU `definitions.units` incremental parser** with **tiered database loading**:
-  - **Tier 1 — Builtin (default):** Hand-seeded ~63 units + dynamic SI/binary prefixes. Zero I/O, instant startup. Sufficient for everyday conversions.
-  - **Tier 2 — Standard:** Tier 1 + simple `name definition` lines from GNU `definitions.units` where the definition resolves to known units. Adds ~500–1000 units (pressure, cooking, historical, etc.). Parses on first use or at startup.
-  - **Tier 3 — Full:** Tier 2 + recursive definition resolution (`foot 12 inch` → look up `inch`), fraction syntax (`5|9`), `!include` for personal units files. ~2000–3000 units.
-  - Selection via `--db` flag (`--db builtin|standard|full`) or TOML config default. REPL defaults to standard; one-shot CLI defaults to builtin for speed.
-  - Skips directives (`!locale`, `!set`, `!var`), function definitions (`tempC(x)`), and base markers (`m !`). Logs skipped lines at `--debug` level.
+- **User-defined dimension names** in the same config (syntax: `dimension Torque = Force × Length`) — extends the annotation registry at runtime. Pure HashMap entries, not type-system work.
+- **Named variables in REPL** — `x = 5 ft`, then `x to m`. Extends the Phase 5a expression evaluator with a `HashMap<String, Quantity>` store.
+- **Unit-list decomposition output** — `6.25 ft → 6 ft 3 in`, `5400 s → 1 h 30 min`. Ergonomic syntax: `runits "6.25 ft" "ft+in"` or `--decompose`. Promoted from Extras Catalog — practical, moderate effort.
+- **Scale chaining input** — `10 ft 5 in` parsed as compound length
+- **Reverse lookup** — given a dimensioned value, suggest matching units/constants (`runits --what "9.81 m/s^2"` → `gravity (g)`), ranked by closeness
 
-**Deliverable:** `runits` becomes a dimensional micro-calculator.
+**Deliverable:** Users can extend the database, get human-readable mixed output, and explore units by value.
+
+---
+
+## Phase 5c — Database Expansion & Definition Format
+
+**Goal:** Grow the unit database from ~63 builtins to thousands, via a clean definition-file format inspired by Numbat's module system — then use it to absorb GNU Units' data and add domain modules like the periodic table.
+
+This is the single deepest gap vs GNU Units (see `docs/gnu-units-parity.md`). Rather than parsing GNU's legacy format directly, RUnits defines its own declarative format and uses it to express both GNU-sourced data and new domain modules. The codebase stays clean; the data scales.
+
+**Definition file format**
+
+Numbat-inspired, declarative (not an interpreted language). Syntax TBD in detail, but the shape:
+
+```
+# Module inclusion (main file → sub-modules)
+include "chemistry/elements"
+include "extra/astronomy"
+
+# Dimension declarations (extend the builtin set)
+dimension Torque = Force * Length
+dimension MolarEnthalpy = Energy / Amount
+
+# Unit definitions — typed, with optional aliases
+unit furlong: Length = 220 yard
+unit solar_mass: Mass = 1.98847e30 kg      @aliases(M_sun)
+unit jansky: SpectralFluxDensity = 1e-26 W / m^2 / Hz
+
+# Constants
+const c: Velocity = 299792458 m/s
+const G = 6.67430e-11 m^3 / (kg * s^2)
+```
+
+Key design decisions vs Numbat: no `use` (we use `include` — flat, not a module tree with namespaces), no executable code, annotations via `@key(value)` rather than Numbat's decorator style. Vs GNU Units: no directives (`!locale`, `!set`, `!var`), no fraction syntax (`5|9`) — these are handled by config.toml and standard decimal notation respectively.
+
+**Scope**
+
+**Tier 1 — Builtin (already done):** Hand-seeded ~63 units + dynamic SI/binary prefixes. Zero I/O, instant startup.
+
+**Tier 2 — Linear definitions:** Parse the definition format above for simple linear units. `include` support for modular files. Adds ~500–1,000 units from GNU-sourced data converted to our format. Skips unresolvable lines. Parses at startup or on first use.
+
+**Tier 3 — Recursive resolution:** Resolve definition chains (`foot 12 inch` → look up `inch` → resolve to meters). Prefix definitions (`name- factor`). Cycle detection. ~2,000–3,000 units.
+
+**Tier 4 — Nonlinear functions:** Function-defined units like temperature scales (`tempC(x) = x + 273.15`), piecewise linear tables (wire gauges, shoe sizes), and their inverses. Architecturally distinct — requires a mini expression evaluator and forward/inverse function dispatch.
+
+**Domain modules**
+
+- **Periodic table** (`chemistry/elements`) — all elements with symbol, name, atomic number, atomic mass (in Da), density, melting/boiling points. Inspired by [Numbat's elements module](https://github.com/sharkdp/numbat/blob/main/numbat/modules/chemistry/elements.nbt). Lookup by symbol or name: `element H` → hydrogen properties.
+- **Astronomy** (`extra/astronomy`) — solar/planetary constants, distance scales (AU, ly, pc, kpc), luminosity units
+- **Nuclear/atomic** — barn, amu, Planck units
+- **Additional SI derived** — area (hectare, acre), concentrations (ppm, molarity)
+
+**Infrastructure**
+- Selection via `--db` flag (`--db builtin|standard|full`) or TOML config default
+- REPL defaults to standard; one-shot CLI defaults to builtin for speed
+- `--check` flag to validate the database (report unresolvable definitions, cycles)
+- Logs skipped/unresolvable lines at `--debug` level
+- Definition files ship with the binary (embedded via `include_str!` or loaded from `~/.config/runits/modules/`)
+
+**Deliverable:** `runits --db full` loads thousands of units from modular definition files, including domain-specific modules and nonlinear function-defined conversions.
 
 ---
 
@@ -122,12 +192,19 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 
 Architecturally interesting work with narrower user value — tackle when motivation strikes:
 
+- **Currency conversion** with live exchange-rate API (e.g., exchangerate.host). Requires HTTP client (reqwest/ureq) + cache layer + rate staleness logic. Architecturally distinct from everything in Phase 5. Potential Phase 6.
 - **Multiple unit systems** (CGS, Imperial, Natural). Great trait-object learning (`Box<dyn UnitSystem>`, strategy pattern), but the value for most users is narrow — compound units with prefixes already cover practical needs.
-- **Currency conversion** with live exchange-rate API (e.g., exchangerate.host). Requires HTTP client + cache layer.
 - **TUI mode** (`runits --tui`) via `ratatui` — a standalone full-screen interactive mode, separate from the REPL. Live dropdown fuzzy picker, side panel with unit info, dimension-colored suggestions. This is *not* a replacement for the REPL — it's an alternative interface. The REPL uses rustyline with progressively enhanced Fish-style completion (hinter, highlighter, dimension-aware tab); the TUI is a distinct full-screen experience with fzf-style filtering.
 - **WASM target** with a small web playground.
-- **Error message polish** — current error messages are functional but basic. Improvements: dimension-colored dimension names in error output, suggested conversions ("did you mean to convert to a Force unit?"), `miette`/`ariadne` source spans for parse errors. Could be a Phase 6 "general polish" pass.
 - **Quality tooling**: criterion benchmarks, proptest round-trip tests, cargo-fuzz on the parser, cargo-dist release packaging, Homebrew tap.
+- **Significant-figure-aware arithmetic** — track sig figs through conversions, warn on excess precision. Niche but loved by chemistry/physics students.
+- **Constants with CODATA uncertainty** — physical constants with official uncertainties (`G = 6.67430(15)×10⁻¹¹ m³/(kg·s²)`). Could be a quality aspect of the Phase 5a constants implementation.
+
+### Explicitly not planned
+
+- **Integer fraction syntax** (`1|2 meter`) — confusing, collides with shell pipe expectations, `0.5 meter` serves the same need. GNU Units inherited this from its 1980s origin.
+- **GNU Units directives** (`!locale`, `!set`, `!var`, `!message`, `!unitlist`) — file-format machinery for GNU's monolithic definition file. RUnits handles these concerns differently: locale via config.toml, decomposition via Phase 5b's `--decompose`, parser options via CLI flags.
+- **Multivariate function units** (`windchill(temp, speed)`) — too specialized, minimal user value vs. implementation cost.
 
 ---
 
@@ -145,11 +222,11 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 4 | Output formats: plain / verbose / JSON / CSV | 4 |
 | 5 | `--verbose` / `--quiet` / `--debug` flags | 2 |
 | 6 | Batch mode (stdin piping, one query per line) | 4 |
-| 7 | `--explain` flag (show conversion chain + dimensions) | 3 |
+| 7 | `--explain` flag (show conversion chain + dimensions) | 5a |
 | 8 | `--precision N` / `--scientific` output flags | 3 |
 | 9 | Tab completion inside REPL (unit names) | 4 |
 | 10 | Ctrl+R history search in REPL | 4 |
-| 11 | Pretty errors with source spans (`miette` / `ariadne`) | 2+ |
+| 11 | Pretty errors with source spans (`miette` / `ariadne`) | 5a |
 | 12 | TUI mode with `ratatui` (unit browser + converter) | Optional |
 | 13 | `--dry-run` (parse & validate without computing) | 2 |
 | 14 | Man-page generation (`clap_mangen`) | 4 |
@@ -161,30 +238,30 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 1 | Temperature scales: C / F / K / Rankine / Réaumur | 3 |
 | 2 | SI prefixes (yotta → yocto, 24 levels) | 3 |
 | 3 | Binary prefixes (Ki → Ei, for info units) | 3 |
-| 4 | Unit arithmetic: `5m + 3ft`, `100kg - 200g` | 5 |
-| 5 | Scale chaining: `6ft 5in`, `1yr 3mo 2wk` | 5 |
-| 6 | Math expressions: `3*4.5 + 2 meter` | 5 |
-| 7 | Compound name simplification (`meter*meter` → `meter^2`, `m·s⁻¹·s⁻¹` → `m·s⁻²`) — touches Mul/Div core | 5 |
-| 8 | Reverse lookup (`what is 9.81 m/s²?` → gravity) | 5 |
+| 4 | Unit arithmetic: `5m + 3ft`, `100kg - 200g` | 5a |
+| 5 | Scale chaining: `6ft 5in`, `1yr 3mo 2wk` | 5b |
+| 6 | Math expressions: `3*4.5 + 2 meter` | 5a |
+| 7 | Compound name simplification (`meter*meter` → `meter^2`, `m·s⁻¹·s⁻¹` → `m·s⁻²`) — touches Mul/Div core | 5a |
+| 8 | Reverse lookup (`what is 9.81 m/s²?` → gravity) | 5b |
 | 9 | Significant-figure-aware arithmetic | 3 |
 | 10 | Angles: rad/deg/grad/turn/arcmin/arcsec | 2 |
 | 11 | Logarithmic scales: dB, neper, phon, pH, Richter | Optional |
 | 12 | E=mc² energy↔mass equivalence | Deferred |
 | 13 | Frequency↔wavelength via c (λν=c) | 5 |
-| 14 | Fractional display (`2.5 ft` → `2 ft 6 in`) | 3 |
+| 14 | Unit-list decomposition (`2.5 ft` → `2 ft 6 in`) | 5b |
 | 15 | Named physical-quantity annotations (e.g. Velocity, Acceleration) via a dimension-signature → name registry (display side only, not type-system work). Registry built in Phase 3; display is REPL-only (Phase 4), following Numbat's convention — CLI output stays pipe-friendly. | 3/4 |
 
 ### Database & Data Enrichment
 
 | # | Feature | Phase |
 |---|---|---|
-| 1 | GNU `definitions.units` incremental parser with tiered loading (builtin/standard/full) | 5 |
+| 1 | GNU `definitions.units` incremental parser with tiered loading (builtin/standard/full) | 5c |
 | 2 | Unit aliases (m, meter, meters, metres) | 2 |
 | 3 | Historical (cubit, league, furlong, stone, rod, chain, perch) | 3 |
 | 4 | Cooking (cup, tbsp, tsp, fl oz, gill, drachm) | 3 |
 | 5 | Astronomical (AU, ly, pc, kpc, Mpc, solar mass/radius) | 3 |
-| 6 | Nuclear/atomic (barn, eV, amu, Planck units) | 5 |
-| 7 | Physical constants (c, G, h, ℏ, k_B, N_A, R, e, ε₀, µ₀, g) | 5 |
+| 6 | Nuclear/atomic (barn, eV, amu, Planck units) | 5c |
+| 7 | Physical constants (c, G, h, ℏ, k_B, N_A, R, e, ε₀, µ₀, g) | 5a |
 | 8 | Regional variants (US/Imperial gallon, troy/avoirdupois oz, long/short ton) | 3 |
 | 9 | Computer/digital (Hz, RPM, FPS, DPI, PPI) | 3 |
 | 10 | Sound (dB, dBm, phon, sone) | Optional |
@@ -193,7 +270,7 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 13 | Pressure (Pa, bar, psi, atm, torr, mmHg, inHg) | 3 |
 | 14 | Radioactivity (becquerel, curie, sievert, gray, rem, rad) | 3 |
 | 15 | Concentrations (molar, molal, ppm, ppb, %w/w, %v/v) | 3 |
-| 16 | Area (are, hectare, acre, barn, square foot/inch/mile) | 5 |
+| 16 | Area (are, hectare, acre, barn, square foot/inch/mile) | 5c |
 
 ---
 
