@@ -1,15 +1,13 @@
 //! In-memory registry of known units + aliases.
 //!
-//! Phase 2 ships a hand-seeded database of ~80 common units, each with one
-//! or more alias strings (`meter`, `m`, `meters`, `metres` all resolve to
-//! the same canonical [`Unit`]). The database also holds a handful of
-//! pre-built compound aliases (`m/s`, `km/h`, `mph`, `rpm`) so users get
-//! velocity / frequency conversions working without Phase 3's compound
-//! grammar yet in place.
+//! Hand-seeded database of ~63 common units, each with one or more alias
+//! strings (`meter`, `m`, `meters`, `metres` all resolve to the same
+//! canonical [`Unit`]). Includes pre-built compound aliases (`m/s`, `km/h`,
+//! `mph`, `rpm`) as convenient shortcuts alongside the compound-unit parser.
 //!
-//! Phase 3 will grow this (SI prefix parsing, GNU `units.dat` ingestion) but
-//! the public API — [`UnitDatabase::lookup`] and [`global`] — is expected to
-//! stay stable.
+//! Lookup also supports dynamic SI prefix stripping (e.g., "Gmeter" → giga +
+//! meter) and binary prefixes for information units. Fuzzy suggestions via
+//! Jaro-Winkler scoring help with typos.
 
 mod seed;
 
@@ -66,7 +64,7 @@ pub struct UnitDatabase {
 }
 
 impl UnitDatabase {
-    /// Build a fresh database with all Phase 2 units + aliases seeded.
+    /// Build a fresh database with all builtin units + aliases seeded.
     pub fn new() -> Self {
         let mut units = HashMap::new();
         seed::seed_all(&mut units);

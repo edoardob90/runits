@@ -1,4 +1,4 @@
-//! Pest-backed parser with compound-unit expression support (Phase 3).
+//! Pest-backed parser with compound-unit expression support.
 //!
 //! Two public entry points:
 //!
@@ -280,7 +280,7 @@ mod tests {
         assert!(matches!(err, RUnitsError::Parse(_)));
     }
 
-    // ---- Phase 3 compound expression tests ----
+    // ---- Compound expression tests ----
 
     #[test]
     fn compound_multiplication() {

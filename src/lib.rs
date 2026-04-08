@@ -25,12 +25,6 @@
 //! - **CLI interface**: Direct command-line unit conversions
 //! - **Interactive mode**: REPL for exploratory unit calculations
 //!
-//! ## Project Documentation
-//!
-//! For additional documentation beyond the API reference:
-//!
-//! - **Learning Notes** - Key Rust concepts learned during development (see `docs/learning-notes.md`)
-//!
 //! ## CLI Usage
 //!
 //! ```bash

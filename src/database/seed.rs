@@ -19,7 +19,7 @@ fn rename(mut unit: Unit, new_name: &str) -> Unit {
     unit
 }
 
-/// Seeds the ~80 Phase 2 entries. Grouped by dimension for readability.
+/// Seeds the builtin unit entries. Grouped by dimension for readability.
 pub(super) fn seed_all(map: &mut HashMap<String, Unit>) {
     // ---- SI base units + base extensions ----
     add(map, &["meter", "m", "meters", "metres"], Unit::meter());
@@ -249,10 +249,8 @@ pub(super) fn seed_all(map: &mut HashMap<String, Unit>) {
     );
 
     // ---- Compound aliases (pre-built via Unit arithmetic) ----
-    // These give users velocity / frequency conversions despite Phase 2's
-    // grammar not yet supporting compound parsing. Phase 3 will obsolete the
-    // "pre-built" trick in favor of dynamic parsing — but the aliases can
-    // stay as handy shortcuts.
+    // Handy shortcuts alongside the compound-unit parser — users can type
+    // "m/s" or "100 km/h" and get an instant match without parsing.
     let m_per_s = Unit::meter() / Unit::second();
     add(map, &["m/s", "mps"], rename(m_per_s, "meter/second"));
 
