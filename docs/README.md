@@ -4,8 +4,7 @@ This directory contains extended documentation beyond the rustdoc API reference.
 
 ## Contents
 
-- **[roadmap.md](roadmap.md)** — Project status, next phases, and feature catalog (also embedded into rustdoc as the [`roadmap`](../src/lib.rs) module)
-- **[learning-notes.md](learning-notes.md)** — Key Rust concepts learned during development
+- **[roadmap.md](roadmap.md)** — "Source of truth" for the project status, next phases, and feature catalog
 
 ## Auto-Generated API Documentation
 
