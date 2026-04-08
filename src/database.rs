@@ -735,7 +735,7 @@ mod tests {
     fn compound_alias_m_per_s_is_velocity() {
         let db = UnitDatabase::new();
         let u = db.lookup("m/s").unwrap();
-        assert_eq!(u.dimension_string(), "length*time^-1");
+        assert_eq!(u.dimension_string(), "Length*Time^-1");
     }
 
     #[test]
@@ -777,7 +777,7 @@ mod tests {
         // "Gmeter" → giga + meter = 1e9 factor
         let u = db.lookup("Gmeter").unwrap();
         assert_eq!(u.conversion_factor(), 1e9);
-        assert_eq!(u.dimension_string(), "length");
+        assert_eq!(u.dimension_string(), "Length");
     }
 
     #[test]
@@ -786,7 +786,7 @@ mod tests {
         // "Ms" → mega + second = 1e6 factor
         let u = db.lookup("Ms").unwrap();
         assert_eq!(u.conversion_factor(), 1e6);
-        assert_eq!(u.dimension_string(), "time");
+        assert_eq!(u.dimension_string(), "Time");
     }
 
     #[test]
@@ -818,7 +818,7 @@ mod tests {
         // "kibibyte" → kibi + byte = 1024 * 8 bits
         let u = db.lookup("kibibyte").unwrap();
         assert_eq!(u.conversion_factor(), 8.0 * 1024.0);
-        assert_eq!(u.dimension_string(), "information");
+        assert_eq!(u.dimension_string(), "Information");
     }
 
     #[test]

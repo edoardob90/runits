@@ -203,7 +203,7 @@ mod tests {
         // Error message should mention both units AND both dimensions,
         // so the user immediately sees why the conversion is illegal.
         assert!(msg.contains("meter") && msg.contains("second"));
-        assert!(msg.contains("length") && msg.contains("time"));
+        assert!(msg.contains("Length") && msg.contains("Time"));
     }
 
     #[test]

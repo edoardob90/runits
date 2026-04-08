@@ -14,6 +14,9 @@ use crate::units::dimension::Dimension;
 use crate::units::quantity::{format_value, format_value_inner};
 use owo_colors::Style;
 
+/// FUTURE(unit-systems): this becomes dynamic when CGS/natural units land.
+pub const UNIT_SYSTEM: &str = "SI";
+
 // ---------------------------------------------------------------------------
 // Theme — semantic color roles
 // ---------------------------------------------------------------------------
@@ -25,6 +28,8 @@ use owo_colors::Style;
 /// Flexoki-inspired ANSI defaults. FUTURE: loadable from config.toml.
 #[derive(Debug, Clone)]
 pub struct Theme {
+    // Color toggle
+    pub color: bool,
     // Per-dimension colors
     pub length: Style,
     pub mass: Style,
@@ -45,10 +50,11 @@ pub struct Theme {
     pub error: Style,
 }
 
-impl Default for Theme {
-    /// Flexoki-inspired ANSI defaults.
-    fn default() -> Self {
-        Self {
+impl Theme {
+    /// Default constructor for a Theme.
+    pub fn new(color: bool) -> Self {
+        Theme {
+            color,
             length: Style::new().blue(),
             mass: Style::new().red(),
             time: Style::new().green(),
@@ -66,12 +72,10 @@ impl Default for Theme {
             error: Style::new().red(),
         }
     }
-}
 
-impl Theme {
     /// Apply a style to text, respecting color enable flag.
-    pub fn paint(&self, text: &str, style: &Style, color: bool) -> String {
-        if color {
+    pub fn paint(&self, text: &str, style: &Style) -> String {
+        if self.color {
             format!("{}", style.style(text))
         } else {
             text.to_string()
@@ -108,23 +112,23 @@ impl Theme {
     }
 
     // Convenience methods.
-    pub fn unit_text(&self, text: &str, unit: &crate::units::Unit, color: bool) -> String {
-        self.paint(text, self.unit_style(unit), color)
+    pub fn unit_text(&self, text: &str, unit: &crate::units::Unit) -> String {
+        self.paint(text, self.unit_style(unit))
     }
-    pub fn num(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.number, color)
+    pub fn num(&self, text: &str) -> String {
+        self.paint(text, &self.number)
     }
-    pub fn kw(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.keyword, color)
+    pub fn kw(&self, text: &str) -> String {
+        self.paint(text, &self.keyword)
     }
-    pub fn lbl(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.compound, color) // labels use compound/bold style
+    pub fn lbl(&self, text: &str) -> String {
+        self.paint(text, &self.compound) // labels use compound/bold style
     }
-    pub fn dim(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.dimmed, color)
+    pub fn dim(&self, text: &str) -> String {
+        self.paint(text, &self.dimmed)
     }
-    pub fn err(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.error, color)
+    pub fn err(&self, text: &str) -> String {
+        self.paint(text, &self.error)
     }
 }
 
@@ -137,7 +141,6 @@ pub fn colored_dimensions(
     symbol_fn: fn(&Dimension) -> &str,
     unicode: bool,
     theme: &Theme,
-    color: bool,
 ) -> String {
     use crate::units::unit::Unit;
     // Sort: positive exponents first, then alphabetical by symbol.
@@ -148,7 +151,7 @@ pub fn colored_dimensions(
     let parts: Vec<String> = entries
         .iter()
         .map(|(dim, sym, exp)| {
-            let styled_sym = theme.paint(sym, theme.dimension_style(dim), color);
+            let styled_sym = theme.paint(sym, theme.dimension_style(dim));
             if *exp == 1 {
                 styled_sym
             } else {
@@ -157,7 +160,7 @@ pub fn colored_dimensions(
                 } else {
                     format!("^{}", exp)
                 };
-                format!("{}{}", styled_sym, theme.num(&exp_str, color))
+                format!("{}{}", styled_sym, theme.num(&exp_str))
             }
         })
         .collect();
@@ -171,10 +174,6 @@ pub fn colored_dimensions(
     }
 }
 
-/// Global default theme. FUTURE: replace with config-loaded theme.
-pub fn default_theme() -> Theme {
-    Theme::default()
-}
 
 // ---------------------------------------------------------------------------
 // FormatOptions
@@ -213,8 +212,7 @@ pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String 
         return format_json(result, opts);
     }
 
-    let t = default_theme();
-    let c = opts.color;
+    let t = Theme::new(opts.color);
 
     let sig_figs = opts.precision.unwrap_or(6);
     let exact = opts.precision.is_some();
@@ -238,14 +236,14 @@ pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String 
 
     let mut out = format!(
         "{} {}",
-        t.num(&value_str, c),
-        t.unit_text(&unit_name, &result.result.unit, c)
+        t.num(&value_str),
+        t.unit_text(&unit_name, &result.result.unit)
     );
 
     if opts.annotations
         && let Some(ann) = result.annotation
     {
-        out.push_str(&format!(" {}", t.dim(&format!("[{}]", ann), c)));
+        out.push_str(&format!(" {}", t.dim(&format!("[{}]", ann))));
     }
 
     out
@@ -276,8 +274,7 @@ pub fn format_unit_info(
     annotation: Option<&str>,
     opts: &FormatOptions,
 ) -> String {
-    let t = default_theme();
-    let c = opts.color;
+    let t = Theme::new(opts.color);
     let mut lines = Vec::new();
 
     let uni = |s: &str| -> String {
@@ -292,16 +289,16 @@ pub fn format_unit_info(
     let alias_str = if aliases.is_empty() {
         String::new()
     } else {
-        format!(" {}", t.dim(&format!("({})", aliases.join(", ")), c))
+        format!(" {}", t.dim(&format!("({})", aliases.join(", "))))
     };
-    lines.push(format!("{}{}", t.unit_text(&unit.name, unit, c), alias_str));
+    lines.push(format!("{}{}", t.unit_text(&unit.name, unit), alias_str));
 
     // Quantity (from annotation registry) — same color as the unit
     if let Some(ann) = annotation {
         lines.push(format!(
             "  {} {}",
-            t.dim("Quantity:", c),
-            t.unit_text(ann, unit, c)
+            t.dim("Quantity:"),
+            t.unit_text(ann, unit)
         ));
     }
 
@@ -311,49 +308,46 @@ pub fn format_unit_info(
         Dimension::analysis_symbol,
         opts.unicode,
         &t,
-        c,
     );
-    lines.push(format!("  {} {}", t.dim("Dimensions:", c), dims_colored));
+    lines.push(format!("  {} {}", t.dim("Dimensions:"), dims_colored));
 
-    // FUTURE(unit-systems): "[SI]" is hardcoded.
-    // Base unit: each component colored by its dimension
+    // System base unit — FUTURE(unit-systems): UNIT_SYSTEM becomes dynamic
     let base_colored = colored_dimensions(
         &unit.dimensions,
         Dimension::base_symbol,
         opts.unicode,
         &t,
-        c,
     );
-    lines.push(format!(
-        "  {} {}  {}",
-        t.dim("Base unit:", c),
-        base_colored,
-        t.dim("[SI]", c)
-    ));
+    let sys_label = format!("{} base:", UNIT_SYSTEM);
+    lines.push(format!("  {} {}", t.dim(&sys_label), base_colored));
 
     // Factor / status / affine
     match &unit.conversion {
         crate::units::unit::ConversionKind::Linear(f) if (*f - 1.0).abs() < 1e-15 => {
-            lines.push(format!("  {}", t.lbl("Reference unit", c)));
+            lines.push(format!(
+                "  {} {} (reference)",
+                t.dim("Factor:"),
+                t.num("1")
+            ));
         }
         crate::units::unit::ConversionKind::Linear(f) => {
             let val = format_value(*f, 6, false);
             lines.push(format!(
                 "  {} {} {} = {} {}",
-                t.dim("Factor:", c),
-                t.num("1", c),
-                t.unit_text(&unit.name, unit, c),
-                t.num(&val, c),
+                t.dim("Factor:"),
+                t.num("1"),
+                t.unit_text(&unit.name, unit),
+                t.num(&val),
                 base_colored,
             ));
         }
         crate::units::unit::ConversionKind::Affine { scale, offset } => {
             lines.push(format!(
                 "  {} {} = value × {} + {}",
-                t.dim("Affine:", c),
-                t.paint("K", t.dimension_style(&Dimension::Temperature), c),
-                t.num(&scale.to_string(), c),
-                t.num(&offset.to_string(), c),
+                t.dim("Affine:"),
+                t.paint("K", t.dimension_style(&Dimension::Temperature)),
+                t.num(&scale.to_string()),
+                t.num(&offset.to_string()),
             ));
         }
     }
@@ -364,10 +358,10 @@ pub fn format_unit_info(
         let exp_fmt = uni(&format!("^{}", exp));
         lines.push(format!(
             "  {} {} ({}{})",
-            t.dim("Prefix:", c),
-            t.unit_text(prefix_name, unit, c),
-            t.num("10", c),
-            t.num(&exp_fmt, c),
+            t.dim("Prefix:"),
+            t.unit_text(prefix_name, unit),
+            t.num("10"),
+            t.num(&exp_fmt),
         ));
     }
 
@@ -376,15 +370,15 @@ pub fn format_unit_info(
         let style = t.unit_style(unit);
         let list = compatible
             .iter()
-            .map(|u| t.paint(u, style, c))
+            .map(|u| t.paint(u, style))
             .collect::<Vec<_>>()
             .join(", ");
-        lines.push(format!("  {} {}", t.dim("Compatible:", c), list));
+        lines.push(format!("  {} {}", t.dim("Compatible:"), list));
     }
 
     // SI prefix note
     if unit.prefixable {
-        lines.push(format!("  {}", t.dim("+ SI prefixes", c)));
+        lines.push(format!("  {}", t.dim("+ SI prefixes")));
     }
 
     lines.join("\n")
@@ -534,9 +528,9 @@ mod tests {
 
     #[test]
     fn theme_paint_no_color() {
-        let t = Theme::default();
+        let t = Theme::new(false);
         let meter = crate::units::Unit::meter();
-        assert_eq!(t.unit_text("meter", &meter, false), "meter");
-        assert_eq!(t.num("3.14", false), "3.14");
+        assert_eq!(t.unit_text("meter", &meter), "meter");
+        assert_eq!(t.num("3.14"), "3.14");
     }
 }

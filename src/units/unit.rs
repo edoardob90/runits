@@ -347,19 +347,19 @@ impl Unit {
     /// use runits::units::dimension::Dimension;
     ///
     /// let meter = Unit::new("meter", 1.0, &[(Dimension::Length, 1)]);
-    /// assert_eq!(meter.dimension_string(), "length");
+    /// assert_eq!(meter.dimension_string(), "Length");
     ///
     /// let velocity = Unit::new("velocity", 1.0, &[
     ///     (Dimension::Length, 1),
     ///     (Dimension::Time, -1)
     /// ]);
-    /// assert_eq!(velocity.dimension_string(), "length*time^-1");
+    /// assert_eq!(velocity.dimension_string(), "Length*Time^-1");
     ///
     /// let acceleration = Unit::new("acceleration", 1.0, &[
     ///     (Dimension::Length, 1),
     ///     (Dimension::Time, -2)
     /// ]);
-    /// assert_eq!(acceleration.dimension_string(), "length*time^-2");
+    /// assert_eq!(acceleration.dimension_string(), "Length*Time^-2");
     /// ```
     pub fn dimension_string(&self) -> String {
         self.render_dimensions(|d| d.name(), "dimensionless")
@@ -519,9 +519,9 @@ mod tests {
 
         let meter_second_dims = meter_second.dimension_string();
         assert!(
-            meter_second_dims.contains("length")
+            meter_second_dims.contains("Length")
                 && meter_second_dims.contains("*")
-                && meter_second_dims.contains("time")
+                && meter_second_dims.contains("Time")
         );
     }
 
@@ -534,7 +534,7 @@ mod tests {
 
         assert_eq!(velocity.name, "meter/second");
         assert_eq!(velocity.conversion_factor(), 1.0);
-        assert_eq!(velocity.dimension_string(), "length*time^-1");
+        assert_eq!(velocity.dimension_string(), "Length*Time^-1");
     }
 
     #[test]
@@ -563,9 +563,9 @@ mod tests {
         let ltr_dims = ltr.dimension_string();
 
         assert_ne!(ltr_dims, with_parens.dimension_string());
-        assert!(ltr_dims.contains("time^-1"));
-        assert!(ltr_dims.contains("length") && ltr_dims.contains("mass"));
-        assert!(with_parens.dimension_string().contains("length"));
+        assert!(ltr_dims.contains("Time^-1"));
+        assert!(ltr_dims.contains("Length") && ltr_dims.contains("Mass"));
+        assert!(with_parens.dimension_string().contains("Length"));
     }
 
     #[test]
@@ -573,11 +573,11 @@ mod tests {
         // Test the new SI base units
         let mol = Unit::mole();
         assert_eq!(mol.name, "mole");
-        assert_eq!(mol.dimension_string(), "amount");
+        assert_eq!(mol.dimension_string(), "Amount");
 
         let cd = Unit::candela();
         assert_eq!(cd.name, "candela");
-        assert_eq!(cd.dimension_string(), "intensity");
+        assert_eq!(cd.dimension_string(), "Intensity");
 
         // Test angle conversion
         let rad = Unit::radian();
@@ -599,7 +599,7 @@ mod tests {
     fn test_dimension_string() {
         // Test simple dimension
         let meter = Unit::meter();
-        assert_eq!(meter.dimension_string(), "length");
+        assert_eq!(meter.dimension_string(), "Length");
 
         // Test velocity (length/time)
         let velocity = Unit::new(
@@ -607,7 +607,7 @@ mod tests {
             1.0,
             &[(Dimension::Length, 1), (Dimension::Time, -1)],
         );
-        assert_eq!(velocity.dimension_string(), "length*time^-1");
+        assert_eq!(velocity.dimension_string(), "Length*Time^-1");
 
         // Test acceleration (length/time^2)
         let acceleration = Unit::new(
@@ -615,7 +615,7 @@ mod tests {
             1.0,
             &[(Dimension::Length, 1), (Dimension::Time, -2)],
         );
-        assert_eq!(acceleration.dimension_string(), "length*time^-2");
+        assert_eq!(acceleration.dimension_string(), "Length*Time^-2");
 
         // Test force (mass*length/time^2)
         let force = Unit::new(
@@ -630,9 +630,9 @@ mod tests {
         // The order might vary since HashMap doesn't guarantee order
         // So we just check it contains the right parts
         let result = force.dimension_string();
-        assert!(result.contains("mass"));
-        assert!(result.contains("length"));
-        assert!(result.contains("time^-2"));
+        assert!(result.contains("Mass"));
+        assert!(result.contains("Length"));
+        assert!(result.contains("Time^-2"));
     }
 
     // ---- Temperature conversion tests ----

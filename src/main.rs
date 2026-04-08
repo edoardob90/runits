@@ -80,7 +80,21 @@ fn run_oneshot(
 
 fn run_repl(cli: &Cli, config: &Config) -> Result<(), RUnitsError> {
     let opts = resolve_opts(cli, config, true);
-    runits::repl::run(&opts);
+    let banner = cli.intro_banner.unwrap_or_else(|| {
+        // Config override, or default to long on TTY.
+        match config.intro_banner.as_deref() {
+            Some("off") => runits::cli::BannerMode::Off,
+            Some("short") => runits::cli::BannerMode::Short,
+            _ => {
+                if std::io::stdout().is_terminal() {
+                    runits::cli::BannerMode::Long
+                } else {
+                    runits::cli::BannerMode::Off
+                }
+            }
+        }
+    });
+    runits::repl::run(&opts, banner);
     Ok(())
 }
 

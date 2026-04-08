@@ -209,7 +209,7 @@ mod tests {
         let db = UnitDatabase::new();
         let q = parse_quantity("100 km/h", &db).unwrap();
         assert_eq!(q.value, 100.0);
-        assert_eq!(q.unit.dimension_string(), "length*time^-1");
+        assert_eq!(q.unit.dimension_string(), "Length*Time^-1");
     }
 
     #[test]
@@ -233,7 +233,7 @@ mod tests {
         let db = UnitDatabase::new();
         let q = parse_quantity("km/h", &db).unwrap();
         assert_eq!(q.value, 1.0);
-        assert_eq!(q.unit.dimension_string(), "length*time^-1");
+        assert_eq!(q.unit.dimension_string(), "Length*Time^-1");
     }
 
     #[test]
@@ -286,8 +286,8 @@ mod tests {
     fn compound_multiplication() {
         let db = UnitDatabase::new();
         let u = parse_unit_name("kg*m", &db).unwrap();
-        assert!(u.dimension_string().contains("mass"));
-        assert!(u.dimension_string().contains("length"));
+        assert!(u.dimension_string().contains("Mass"));
+        assert!(u.dimension_string().contains("Length"));
     }
 
     #[test]
@@ -296,9 +296,9 @@ mod tests {
         // kg*m/s^2 = force dimensions
         let u = parse_unit_name("kg*m/s^2", &db).unwrap();
         let dims = u.dimension_string();
-        assert!(dims.contains("mass"));
-        assert!(dims.contains("length"));
-        assert!(dims.contains("time^-2"));
+        assert!(dims.contains("Mass"));
+        assert!(dims.contains("Length"));
+        assert!(dims.contains("Time^-2"));
     }
 
     #[test]
@@ -307,16 +307,16 @@ mod tests {
         // Spaces around operators should work
         let u = parse_unit_name("kg * m / s ^ 2", &db).unwrap();
         let dims = u.dimension_string();
-        assert!(dims.contains("mass"));
-        assert!(dims.contains("length"));
-        assert!(dims.contains("time^-2"));
+        assert!(dims.contains("Mass"));
+        assert!(dims.contains("Length"));
+        assert!(dims.contains("Time^-2"));
     }
 
     #[test]
     fn compound_negative_exponent() {
         let db = UnitDatabase::new();
         let u = parse_unit_name("m^-1", &db).unwrap();
-        assert_eq!(u.dimension_string(), "length^-1");
+        assert_eq!(u.dimension_string(), "Length^-1");
     }
 
     #[test]
@@ -324,9 +324,9 @@ mod tests {
         let db = UnitDatabase::new();
         let u = parse_unit_name("(kg*m)/s^2", &db).unwrap();
         let dims = u.dimension_string();
-        assert!(dims.contains("mass"));
-        assert!(dims.contains("length"));
-        assert!(dims.contains("time^-2"));
+        assert!(dims.contains("Mass"));
+        assert!(dims.contains("Length"));
+        assert!(dims.contains("Time^-2"));
     }
 
     #[test]
@@ -335,8 +335,8 @@ mod tests {
         let q = parse_quantity("5 kg/m^3", &db).unwrap();
         assert_eq!(q.value, 5.0);
         let dims = q.unit.dimension_string();
-        assert!(dims.contains("mass"));
-        assert!(dims.contains("length^-3"));
+        assert!(dims.contains("Mass"));
+        assert!(dims.contains("Length^-3"));
     }
 
     #[test]

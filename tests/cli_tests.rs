@@ -125,8 +125,8 @@ fn incompatible_dimensions_fails_with_helpful_message() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("incompatible dimensions"))
-        .stderr(predicate::str::contains("length"))
-        .stderr(predicate::str::contains("mass"));
+        .stderr(predicate::str::contains("Length"))
+        .stderr(predicate::str::contains("Mass"));
 }
 
 #[test]

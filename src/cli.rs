@@ -3,7 +3,7 @@
 //! Supports one-shot conversion (`runits "10 ft" "m"`), REPL mode
 //! (`runits` with no args), batch mode (`--batch`), and subcommands.
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// Convert quantities between units.
 #[derive(Parser, Debug)]
@@ -39,8 +39,19 @@ pub struct Cli {
     #[arg(long)]
     pub batch: bool,
 
+    /// REPL intro banner mode
+    #[arg(long, value_enum)]
+    pub intro_banner: Option<BannerMode>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum BannerMode {
+    Long,
+    Short,
+    Off,
 }
 
 #[derive(Subcommand, Debug)]

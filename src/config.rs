@@ -15,6 +15,8 @@ pub struct Config {
     pub color: Option<bool>,
     /// Enable/disable Unicode unit rendering (overridden by `--pretty`).
     pub unicode: Option<bool>,
+    /// Intro banner mode: "long", "short", or "off".
+    pub intro_banner: Option<String>,
 }
 
 impl Config {

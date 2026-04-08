@@ -18,6 +18,11 @@ pub fn quantity_name(dims: &DimensionMap) -> Option<&'static str> {
     registry().get(&dim_key(dims)).copied()
 }
 
+/// Number of named quantities in the registry.
+pub fn quantity_name_count() -> usize {
+    registry().len()
+}
+
 /// Canonical string key for a DimensionMap: sorted dimension abbreviations
 /// with exponents, e.g. "L1M1T-2" for force (kg*m/s^2).
 fn dim_key(dims: &DimensionMap) -> String {

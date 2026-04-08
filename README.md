@@ -67,6 +67,16 @@ $ runits --to-base "1 newton" "kg*m/s^2"
 
 ```
 $ runits
+  runits 0.1.0
+  Unit converter with dimensional analysis
+
+  Unit system: SI
+  Database: 63 (builtin) + SI/binary prefixes
+  Config: ~/.config/runits/config.toml
+
+  Syntax: <quantity> -> <target>
+  Type ? for unit help, info for status, quit to exit.
+
 >>> 100 km/h -> m/s
 27.7778 meter/second [Velocity]
 
@@ -74,8 +84,8 @@ $ runits
 newton (N, newtons)
   Quantity: Force
   Dimensions: L·M·T⁻²
-  Base unit: kg·m·s⁻²  [SI]
-  Reference unit
+  SI base: kg·m·s⁻²
+  Factor: 1 (reference)
   Compatible: dyne, kilogram_force, pound_force
   + SI prefixes
 
@@ -87,6 +97,8 @@ newton (N, newtons)
 - Fish-style inline hints + syntax highlighting as you type
 - Dimension-aware tab-completion (after `->` only compatible units are suggested)
 - `?` queries for unit info, `quantity -> ?` to explore compatible targets
+- `info` command for system status + color legend
+- Configurable banner (`--intro-banner long|short|off`)
 - Persistent history at `~/.config/runits/history`
 
 ### Additional Features

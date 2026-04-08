@@ -6,10 +6,10 @@
 //! `~/.config/runits/history`.
 
 use crate::annotations::quantity_name;
-use crate::convert;
 use crate::database::{self, UnitDatabase};
 use crate::format::{self, FormatOptions};
 use crate::parser;
+use crate::{Dimension, convert};
 use rustyline::Editor;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
@@ -144,7 +144,7 @@ impl Highlighter for UnitsHelper {
             return Cow::Borrowed(line);
         }
 
-        let t = format::default_theme();
+        let t = format::Theme::new(true);
         let mut result = String::with_capacity(line.len() + 64);
         let mut i = 0;
         let bytes = line.as_bytes();
@@ -158,7 +158,7 @@ impl Highlighter for UnitsHelper {
 
             // "->" delimiter
             if i + 1 < bytes.len() && &line[i..i + 2] == "->" {
-                result.push_str(&t.kw("->", true));
+                result.push_str(&t.kw("->"));
                 i += 2;
                 continue;
             }
@@ -171,13 +171,13 @@ impl Highlighter for UnitsHelper {
             let token = &line[start..i];
 
             if token == "to" || token == "in" || token == "as" {
-                result.push_str(&t.kw(token, true));
+                result.push_str(&t.kw(token));
             } else if token.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {
-                result.push_str(&t.num(token, true));
+                result.push_str(&t.num(token));
             } else if token == "?" || token == "quit" || token == "exit" {
                 result.push_str(token);
             } else if let Some(u) = self.db.lookup(token) {
-                result.push_str(&t.unit_text(token, &u, true));
+                result.push_str(&t.unit_text(token, &u));
             } else {
                 result.push_str(token);
             }
@@ -187,8 +187,8 @@ impl Highlighter for UnitsHelper {
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        let t = format::default_theme();
-        Cow::Owned(t.dim(hint, true))
+        let t = format::Theme::new(true);
+        Cow::Owned(t.dim(hint))
     }
 
     fn highlight_char(
@@ -220,7 +220,7 @@ pub fn parse_repl_line(line: &str) -> Option<(&str, &str)> {
 }
 
 /// Run the interactive REPL loop.
-pub fn run(opts: &FormatOptions) {
+pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
     let mut rl = Editor::new().expect("failed to initialize line editor");
     rl.set_helper(Some(UnitsHelper {
         db: database::global(),
@@ -232,23 +232,10 @@ pub fn run(opts: &FormatOptions) {
         let _ = rl.load_history(path);
     }
 
-    let t = format::default_theme();
-    let c = opts.color;
-    println!(
-        "{} {} — interactive mode. Type {} or {} to exit.",
-        t.kw("runits", c),
-        env!("CARGO_PKG_VERSION"),
-        t.kw("quit", c),
-        t.kw("Ctrl-D", c),
-    );
-    println!(
-        "Syntax: {} {} {}",
-        t.dim("<quantity>", c),
-        t.kw("->", c),
-        t.dim("<target>", c),
-    );
-
+    let t = format::Theme::new(opts.color);
     let db = database::global();
+
+    print_banner(banner, &t, db);
 
     loop {
         match rl.readline(">>> ") {
@@ -259,6 +246,10 @@ pub fn run(opts: &FormatOptions) {
                 }
                 if line == "quit" || line == "exit" {
                     break;
+                }
+                if line == "info" {
+                    print_info(&t, db);
+                    continue;
                 }
                 let _ = rl.add_history_entry(line);
 
@@ -279,6 +270,91 @@ pub fn run(opts: &FormatOptions) {
 }
 
 /// Main REPL dispatch: route input to the right handler.
+fn print_banner(mode: crate::cli::BannerMode, t: &format::Theme, db: &UnitDatabase) {
+    use crate::cli::BannerMode;
+    match mode {
+        BannerMode::Off => {}
+        BannerMode::Short => {
+            println!(
+                "{} {} — {}, {} units. Type {} or {} to exit.",
+                t.kw("runits"),
+                env!("CARGO_PKG_VERSION"),
+                format::UNIT_SYSTEM,
+                db.len(),
+                t.kw("quit"),
+                t.kw("Ctrl-D"),
+            );
+        }
+        BannerMode::Long => {
+            println!();
+            println!("  {} {}", t.kw("runits"), env!("CARGO_PKG_VERSION"));
+            println!("  Unit converter with dimensional analysis");
+            println!();
+            println!("  {} {}", t.dim("Unit system:"), format::UNIT_SYSTEM,);
+            println!(
+                "  {} {} (builtin) + SI/binary prefixes",
+                t.dim("Database:"),
+                db.len(),
+            );
+            let config_path = config_dir()
+                .map(|d| d.join("config.toml"))
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "not found".to_string());
+            println!("  {} {}", t.dim("Config:"), config_path);
+            println!();
+            println!(
+                "  Syntax: {} {} {}",
+                t.dim("<quantity>"),
+                t.kw("->"),
+                t.dim("<target>"),
+            );
+            println!(
+                "  Type {} for unit help, {} for status, {} to exit.",
+                t.kw("?"),
+                t.kw("info"),
+                t.kw("quit"),
+            );
+            println!();
+        }
+    }
+}
+
+fn print_info(t: &format::Theme, db: &UnitDatabase) {
+    // Unit system and database
+    println!("  {} {}", t.dim("Unit system:"), format::UNIT_SYSTEM,);
+    println!(
+        "  {} {} (builtin) + SI/binary prefixes",
+        t.dim("Database:"),
+        db.len(),
+    );
+    // Config file
+    let config_path = config_dir()
+        .map(|d| d.join("config.toml"))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "not found".to_string());
+    println!("  {} {}", t.dim("Config:"), config_path);
+    // History file
+    let history_path = config_dir()
+        .map(|d| d.join("history"))
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "not found".to_string());
+    println!("  {} {}", t.dim("History:"), history_path);
+    // FUTURE(theme-config): theme name should come from config when
+    // user-defined themes (config.toml [theme] section) are supported.
+    print!("  {}", t.dim("Theme:"));
+    let theme_legend: Vec<String> = Dimension::ALL
+        .iter()
+        .map(|dim| t.paint(dim.name(), t.dimension_style(dim)))
+        .collect();
+    println!(" {}", theme_legend.join(" · "));
+    // Quantities
+    println!(
+        "  {} {} quantities registered",
+        t.dim("Annotations:"),
+        crate::annotations::quantity_name_count(),
+    );
+}
+
 fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
     // 1. Delimiter-based input (check first, so "100 km/h -> ?" is caught).
     if let Some((source, target)) = parse_repl_line(line) {
@@ -374,16 +450,15 @@ fn handle_quantity_help_from_qty(
     };
     println!("{}", format::format_result(&result, opts));
 
-    let t = format::default_theme();
-    let c = opts.color;
+    let t = format::Theme::new(opts.color);
     let compatible = db.compatible_units(&qty.unit);
     if compatible.is_empty() {
-        println!("  {}", t.dim("No other compatible units in database.", c));
+        println!("  {}", t.dim("No other compatible units in database."));
     } else {
         let style = t.unit_style(&qty.unit);
         let list = compatible
             .iter()
-            .map(|u| t.paint(u, style, c))
+            .map(|u| t.paint(u, style))
             .collect::<Vec<_>>()
             .join(", ");
         println!("  Compatible: {}", list);
@@ -391,12 +466,8 @@ fn handle_quantity_help_from_qty(
 }
 
 fn print_error(e: &crate::error::RUnitsError, opts: &FormatOptions) {
-    let t = format::default_theme();
-    if opts.color {
-        eprintln!("{}", t.err(&format!("Error: {e}"), true));
-    } else {
-        eprintln!("Error: {e}");
-    }
+    let t = format::Theme::new(opts.color);
+    eprintln!("{}", t.err(&format!("Error: {e}")));
 }
 
 /// Returns `~/.config/runits/` using XDG_CONFIG_HOME or HOME fallback.

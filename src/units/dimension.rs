@@ -19,24 +19,38 @@ use std::collections::HashMap;
 /// let length = Dimension::Length;
 /// let mass = Dimension::Mass;
 ///
-/// assert_eq!(length.name(), "length");
-/// assert_eq!(mass.name(), "mass");
+/// assert_eq!(length.name(), "Length");
+/// assert_eq!(mass.name(), "Mass");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Dimension {
-    /// Spatial extent - SI base unit: meter (m)
+    /// Spatial extent
+    ///
+    /// SI base unit: meter (m)
     Length,
-    /// Inertial property - SI base unit: kilogram (kg)
+    /// Inertial property
+    ///
+    /// SI base unit: kilogram (kg)
     Mass,
-    /// Duration - SI base unit: second (s)
+    /// Duration
+    ///
+    /// SI base unit: second (s)
     Time,
-    /// Thermodynamic temperature - SI base unit: kelvin (K)
+    /// Thermodynamic temperature
+    ///
+    /// SI base unit: kelvin (K)
     Temperature,
-    /// Electric current - SI base unit: ampere (A)
+    /// Electric current
+    ///
+    /// SI base unit: ampere (A)
     Current,
-    /// Amount of substance - SI base unit: mole (mol)
+    /// Amount of substance
+    ///
+    /// SI base unit: mole (mol)
     AmountOfSubstance,
-    /// Luminous intensity - SI base unit: candela (cd)
+    /// Luminous intensity
+    ///
+    /// SI base unit: candela (cd)
     LuminousIntensity,
 
     /// Planar angle - base unit: radian (rad)
@@ -85,22 +99,22 @@ impl Dimension {
     /// ```
     /// use runits::units::dimension::Dimension;
     ///
-    /// assert_eq!(Dimension::Length.name(), "length");
-    /// assert_eq!(Dimension::AmountOfSubstance.name(), "amount");
-    /// assert_eq!(Dimension::LuminousIntensity.name(), "intensity");
+    /// assert_eq!(Dimension::Length.name(), "Length");
+    /// assert_eq!(Dimension::AmountOfSubstance.name(), "Amount");
+    /// assert_eq!(Dimension::LuminousIntensity.name(), "Intensity");
     /// ```
     pub fn name(&self) -> &'static str {
         match self {
-            Dimension::Length => "length",
-            Dimension::Mass => "mass",
-            Dimension::Time => "time",
-            Dimension::Temperature => "temperature",
-            Dimension::Current => "current",
-            Dimension::AmountOfSubstance => "amount",
-            Dimension::LuminousIntensity => "intensity",
-            Dimension::Angle => "angle",
-            Dimension::Information => "information",
-            Dimension::Currency => "currency",
+            Dimension::Length => "Length",
+            Dimension::Mass => "Mass",
+            Dimension::Time => "Time",
+            Dimension::Temperature => "Temperature",
+            Dimension::Current => "Current",
+            Dimension::AmountOfSubstance => "Amount",
+            Dimension::LuminousIntensity => "Intensity",
+            Dimension::Angle => "Angle",
+            Dimension::Information => "Information",
+            Dimension::Currency => "Currency",
         }
     }
 
@@ -141,6 +155,20 @@ impl Dimension {
             Dimension::Currency => "¤",
         }
     }
+
+    /// Returns all dimensions supported
+    pub const ALL: &[Dimension] = &[
+        Dimension::Length,
+        Dimension::Mass,
+        Dimension::Time,
+        Dimension::Temperature,
+        Dimension::Current,
+        Dimension::AmountOfSubstance,
+        Dimension::LuminousIntensity,
+        Dimension::Angle,
+        Dimension::Information,
+        Dimension::Currency,
+    ];
 }
 
 /// Type alias for dimension maps used in unit definitions.
@@ -179,7 +207,7 @@ mod tests {
     fn test_dimension_creation() {
         // Test a basic dimension creation
         let length = Dimension::Length;
-        assert_eq!(length.name(), "length");
+        assert_eq!(length.name(), "Length");
     }
 
     #[test]
