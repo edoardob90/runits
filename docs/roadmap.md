@@ -16,6 +16,7 @@ This file is embedded into the rustdoc site and rendered as a chapter there.
 | 2 — Functional CLI | ✅ Complete | clap, pest parser, UnitDatabase (~80 aliases), thiserror; 6-sig-fig adaptive output formatter; bare unit names accepted |
 | 3 — Rich Conversions | ✅ Complete | ConversionKind enum (affine); temperature (C/F/K/Ra/Ré); SI prefixes (24) + binary (6); compound-unit grammar (`kg*m/s^2`); `--precision`/`--scientific`/`--to-base` flags; annotations registry; ~63 units + force/pressure/energy/power/historical/cooking/astronomical/radioactivity |
 | 4 — Interactive Experience | ✅ Complete | REPL (rustyline), dimension-based color theme (Flexoki-inspired), Fish-style hinter + syntax highlighter, dimension-aware tab-completion, `?` help with SI base/factor/prefix, `info` command, long/short/off banner, fuzzy suggestions (strsim), `--json`/`--pretty`/`--batch`, TOML config (`~/.config/runits/config.toml`), shell completions, `Unit.prefixable`, Theme carries color flag |
+| 4.5 — Codebase Reorganization | ✅ Complete | Split database/ (seed extraction), theme.rs (from format), repl/ (helper extraction); removed roadmap from rustdoc; CLAUDE.md hierarchy |
 | 5 — Extensibility | ⏳ Active | Custom units, constants, expressions, GNU units parser |
 
 **Test suite (latest):** 112 unit tests + 9 doc tests + 19 integration tests = 140 total, all passing. Dependencies: clap, clap_complete, pest, pest_derive, thiserror, owo-colors, rustyline, strsim, serde, toml (dev: assert_cmd, predicates). Clean clippy, clean fmt.

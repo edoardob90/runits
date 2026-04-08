@@ -47,11 +47,13 @@ Every plan Claude writes (plan mode or otherwise) **must** include a **User Veri
 
 ## Project Structure
 
+Module-specific instructions live in `src/database/CLAUDE.md`, `src/repl/CLAUDE.md`, and `src/units/CLAUDE.md`. These are automatically loaded when working in those directories.
+
 ```
 runits/
 ├── Cargo.toml             # project manifest
 ├── README.md              # user-facing overview
-├── CLAUDE.md              # this file
+├── CLAUDE.md              # this file (root instructions)
 ├── LICENSE                # MIT
 ├── .github/workflows/     # CI: docs build + deploy to GitHub Pages
 ├── docs/
@@ -61,19 +63,27 @@ runits/
 ├── tests/
 │   └── cli_tests.rs       # assert_cmd integration tests
 └── src/
-    ├── lib.rs             # crate root, re-exports, embeds roadmap.md into rustdoc
+    ├── lib.rs             # crate root, re-exports
     ├── main.rs            # CLI entry point + dispatch (one-shot/REPL/batch/completions)
     ├── cli.rs             # clap-derived Cli struct + Commands subcommand enum
     ├── parser.rs          # pest parser + compound-unit expression tree walker
-    ├── database.rs        # UnitDatabase with alias lookup, SI/binary prefixes, fuzzy suggest
     ├── error.rs           # unified error enum via thiserror (with fuzzy suggestions)
     ├── annotations.rs     # dimension-signature → physical-quantity name registry
     ├── convert.rs         # ConversionResult + run_conversion() (shared by CLI/REPL/batch)
-    ├── format.rs          # Theme (dimension-based colors), FormatOptions, format_result/unit_info
-    ├── repl.rs            # REPL loop, ? help, hinter, highlighter, tab-completion
+    ├── theme.rs           # Theme struct (Flexoki-inspired dimension-based colors), paint/style methods
+    ├── format.rs          # FormatOptions, format_result/unit_info, unicode rendering
     ├── config.rs          # TOML config loading (~/.config/runits/config.toml)
     ├── grammar.pest       # pest grammar for quantity + compound-unit parsing
+    ├── database/
+    │   ├── CLAUDE.md      # module-specific instructions
+    │   ├── mod.rs         # UnitDatabase: lookup, prefix stripping, fuzzy suggest, global singleton
+    │   └── seed.rs        # seed_all(): ~63 builtin units + aliases
+    ├── repl/
+    │   ├── CLAUDE.md      # module-specific instructions
+    │   ├── mod.rs         # REPL loop, input dispatch, ? help handlers, banner, info command
+    │   └── helper.rs      # UnitsHelper: rustyline Completer/Hinter/Highlighter/Validator
     └── units/
+        ├── CLAUDE.md      # module-specific instructions
         ├── mod.rs         # module re-exports
         ├── dimension.rs   # Dimension enum + DimensionMap + analysis_symbol/base_symbol
         ├── unit.rs        # Unit struct, ConversionKind, prefixable, Mul/Div, render_dimensions
