@@ -123,7 +123,7 @@ Architecturally interesting work with narrower user value — tackle when motiva
 
 - **Multiple unit systems** (CGS, Imperial, Natural). Great trait-object learning (`Box<dyn UnitSystem>`, strategy pattern), but the value for most users is narrow — compound units with prefixes already cover practical needs.
 - **Currency conversion** with live exchange-rate API (e.g., exchangerate.host). Requires HTTP client + cache layer.
-- **TUI mode** (`runits --tui`) via `ratatui` — a standalone full-screen interactive mode, separate from the REPL. Dropdown fuzzy picker, side panel with unit info, dimension-colored suggestions. This is *not* a replacement for the REPL — it's an alternative interface. The REPL uses rustyline with progressively enhanced completion (Fish-style); the TUI is a distinct experience.
+- **TUI mode** (`runits --tui`) via `ratatui` — a standalone full-screen interactive mode, separate from the REPL. Live dropdown fuzzy picker, side panel with unit info, dimension-colored suggestions. This is *not* a replacement for the REPL — it's an alternative interface. The REPL uses rustyline with progressively enhanced Fish-style completion (hinter, highlighter, dimension-aware tab); the TUI is a distinct full-screen experience with fzf-style filtering.
 - **WASM target** with a small web playground.
 - **Quality tooling**: criterion benchmarks, proptest round-trip tests, cargo-fuzz on the parser, cargo-dist release packaging, Homebrew tap.
 
@@ -162,7 +162,7 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 4 | Unit arithmetic: `5m + 3ft`, `100kg - 200g` | 5 |
 | 5 | Scale chaining: `6ft 5in`, `1yr 3mo 2wk` | 5 |
 | 6 | Math expressions: `3*4.5 + 2 meter` | 5 |
-| 7 | Automatic simplification (`m·s⁻¹·s⁻¹` → `m/s²`) | 3 |
+| 7 | Compound name simplification (`meter*meter` → `meter^2`, `m·s⁻¹·s⁻¹` → `m·s⁻²`) — touches Mul/Div core | 5 |
 | 8 | Reverse lookup (`what is 9.81 m/s²?` → gravity) | 5 |
 | 9 | Significant-figure-aware arithmetic | 3 |
 | 10 | Angles: rad/deg/grad/turn/arcmin/arcsec | 2 |
@@ -191,6 +191,7 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 13 | Pressure (Pa, bar, psi, atm, torr, mmHg, inHg) | 3 |
 | 14 | Radioactivity (becquerel, curie, sievert, gray, rem, rad) | 3 |
 | 15 | Concentrations (molar, molal, ppm, ppb, %w/w, %v/v) | 3 |
+| 16 | Area (are, hectare, acre, barn, square foot/inch/mile) | 5 |
 
 ---
 

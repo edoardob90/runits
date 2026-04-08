@@ -70,6 +70,10 @@ pub struct Unit {
     pub conversion: ConversionKind,
     /// What this unit measures: `{Length: 1}` for meters, `{Mass: 1, Length: 1, Time: -2}` for newtons
     pub dimensions: DimensionMap,
+    /// Whether SI/metric prefixes can be applied (kilo-, milli-, etc.).
+    /// True for SI units (meter, second, newton, ...) and byte/liter.
+    /// False for non-SI units (foot, mile, furlong, psi, ...).
+    pub prefixable: bool,
 }
 
 impl Unit {
@@ -103,18 +107,30 @@ impl Unit {
             name: name.to_string(),
             conversion: ConversionKind::Linear(conversion_factor),
             dimensions: create_dimensions(dimensions),
+            prefixable: false,
+        }
+    }
+
+    /// Creates an SI/metric unit that accepts prefixes (kilo-, milli-, etc.).
+    pub fn new_si(name: &str, conversion_factor: f64, dimensions: &[(Dimension, i8)]) -> Self {
+        Unit {
+            name: name.to_string(),
+            conversion: ConversionKind::Linear(conversion_factor),
+            dimensions: create_dimensions(dimensions),
+            prefixable: true,
         }
     }
 
     /// Creates a unit with an affine (scale + offset) conversion to the base unit.
     ///
     /// The conversion formula is: `base_value = value * scale + offset`.
-    /// Used for absolute temperature scales.
+    /// Used for absolute temperature scales. Not prefixable.
     pub fn new_affine(name: &str, scale: f64, offset: f64, dimensions: &[(Dimension, i8)]) -> Self {
         Unit {
             name: name.to_string(),
             conversion: ConversionKind::Affine { scale, offset },
             dimensions: create_dimensions(dimensions),
+            prefixable: false,
         }
     }
 
@@ -166,37 +182,37 @@ impl Unit {
 
     // Length (SI: meter)
     pub fn meter() -> Self {
-        Self::new("meter", 1.0, &[(Dimension::Length, 1)])
+        Self::new_si("meter", 1.0, &[(Dimension::Length, 1)])
     }
 
     // Mass (SI: kilogram)
     pub fn kilogram() -> Self {
-        Self::new("kilogram", 1.0, &[(Dimension::Mass, 1)])
+        Self::new_si("kilogram", 1.0, &[(Dimension::Mass, 1)])
     }
 
     // Time (SI: second)
     pub fn second() -> Self {
-        Self::new("second", 1.0, &[(Dimension::Time, 1)])
+        Self::new_si("second", 1.0, &[(Dimension::Time, 1)])
     }
 
     // Temperature (SI: kelvin)
     pub fn kelvin() -> Self {
-        Self::new("kelvin", 1.0, &[(Dimension::Temperature, 1)])
+        Self::new_si("kelvin", 1.0, &[(Dimension::Temperature, 1)])
     }
 
     // Electric current (SI: ampere)
     pub fn ampere() -> Self {
-        Self::new("ampere", 1.0, &[(Dimension::Current, 1)])
+        Self::new_si("ampere", 1.0, &[(Dimension::Current, 1)])
     }
 
     // Amount of substance (SI: mole)
     pub fn mole() -> Self {
-        Self::new("mole", 1.0, &[(Dimension::AmountOfSubstance, 1)])
+        Self::new_si("mole", 1.0, &[(Dimension::AmountOfSubstance, 1)])
     }
 
     // Luminous intensity (SI: candela)
     pub fn candela() -> Self {
-        Self::new("candela", 1.0, &[(Dimension::LuminousIntensity, 1)])
+        Self::new_si("candela", 1.0, &[(Dimension::LuminousIntensity, 1)])
     }
 
     // ----- SPECIAL UNITS -----
@@ -209,14 +225,14 @@ impl Unit {
 
     // ----- OTHER BASE UNITS (non-SI) -----
 
-    // Angle (radian)
+    // Angle (radian — SI-accepted, prefixable: millirad)
     pub fn radian() -> Self {
-        Self::new("radian", 1.0, &[(Dimension::Angle, 1)])
+        Self::new_si("radian", 1.0, &[(Dimension::Angle, 1)])
     }
 
-    // Information (bit)
+    // Information (bit — prefixable: kilobit, megabit)
     pub fn bit() -> Self {
-        Self::new("bit", 1.0, &[(Dimension::Information, 1)])
+        Self::new_si("bit", 1.0, &[(Dimension::Information, 1)])
     }
 
     // ----- TEMPERATURE SCALES (affine) -----
@@ -293,9 +309,9 @@ impl Unit {
         )
     }
 
-    // Information derived units
+    // Information derived units (prefixable: KB, MB, GB)
     pub fn byte() -> Self {
-        Self::new("byte", 8.0, &[(Dimension::Information, 1)])
+        Self::new_si("byte", 8.0, &[(Dimension::Information, 1)])
     }
 
     /// Checks if two units measure the same physical quantity.

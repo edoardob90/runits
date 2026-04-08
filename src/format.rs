@@ -3,47 +3,113 @@
 //!
 //! All conversion display goes through [`format_result`]. The caller builds
 //! [`FormatOptions`] from CLI flags, config, and environment (isatty, `NO_COLOR`).
+//!
+//! Colors use semantic roles via [`Theme`] — a unit name is always "unit color"
+//! whether it appears in a conversion result, `?` help, or REPL highlighting.
+//! FUTURE: load theme from config.toml `[theme]` section with hex support.
 
 use crate::convert::ConversionResult;
+use crate::database::SI_PREFIXES;
 use crate::units::quantity::{format_value, format_value_inner};
-use owo_colors::OwoColorize;
+use owo_colors::Style;
 
-/// Presentation settings resolved from CLI flags + config + environment.
+// ---------------------------------------------------------------------------
+// Theme — semantic color roles
+// ---------------------------------------------------------------------------
+
+/// Semantic color roles for consistent styling across all output.
+///
+/// Defaults are Flexoki-inspired ANSI colors. FUTURE: loadable from
+/// config.toml `[theme]` with hex/truecolor support.
 #[derive(Debug, Clone)]
-pub struct FormatOptions {
-    /// Significant figures (None = default 6).
-    pub precision: Option<usize>,
-    /// Force scientific notation.
-    pub scientific: bool,
-    /// Expand unit to base SI symbols.
-    pub to_base: bool,
-    /// Use ANSI colors in output.
-    pub color: bool,
-    /// Use Unicode symbols (middle-dot, superscript exponents).
-    pub unicode: bool,
-    /// Show physical-quantity annotations (e.g. "Velocity", "Force").
-    pub annotations: bool,
-    /// Output as JSON.
-    pub json: bool,
+pub struct Theme {
+    /// Unit names and symbols: meter, ft, N, kg·m·s⁻²
+    pub unit: Style,
+    /// Dimension analysis symbols: L, M, T, Θ
+    pub dimension: Style,
+    /// Numeric values: 0.3048, 1000, 10³
+    pub number: Style,
+    /// Conversion keywords: ->, to, in, as
+    pub keyword: Style,
+    /// Important label values: Force, Velocity, Reference unit
+    pub label_value: Style,
+    /// Secondary info: aliases, compatible list, system tag, hints, + SI prefixes
+    pub dimmed: Style,
+    /// Error messages
+    pub error: Style,
 }
 
-impl Default for FormatOptions {
-    /// Defaults for one-shot CLI: no color, no unicode, no annotations.
+impl Default for Theme {
+    /// Flexoki-inspired ANSI defaults.
     fn default() -> Self {
         Self {
-            precision: None,
-            scientific: false,
-            to_base: false,
-            color: false,
-            unicode: false,
-            annotations: false,
-            json: false,
+            unit: Style::new().cyan(),
+            dimension: Style::new().blue().bold(),
+            number: Style::new().yellow(),
+            keyword: Style::new().bold(),
+            label_value: Style::new().bold(),
+            dimmed: Style::new().dimmed(),
+            error: Style::new().red(),
         }
     }
 }
 
+impl Theme {
+    /// Apply a style to text, respecting color enable flag.
+    pub fn paint(&self, text: &str, style: &Style, color: bool) -> String {
+        if color {
+            format!("{}", style.style(text))
+        } else {
+            text.to_string()
+        }
+    }
+
+    // Convenience methods for common roles.
+    pub fn unit(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.unit, color)
+    }
+    pub fn dim_sym(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.dimension, color)
+    }
+    pub fn num(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.number, color)
+    }
+    pub fn kw(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.keyword, color)
+    }
+    pub fn lbl(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.label_value, color)
+    }
+    pub fn dim(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.dimmed, color)
+    }
+    pub fn err(&self, text: &str, color: bool) -> String {
+        self.paint(text, &self.error, color)
+    }
+}
+
+/// Global default theme. FUTURE: replace with config-loaded theme.
+pub fn default_theme() -> Theme {
+    Theme::default()
+}
+
+// ---------------------------------------------------------------------------
+// FormatOptions
+// ---------------------------------------------------------------------------
+
+/// Presentation settings resolved from CLI flags + config + environment.
+#[derive(Debug, Clone, Default)]
+pub struct FormatOptions {
+    pub precision: Option<usize>,
+    pub scientific: bool,
+    pub to_base: bool,
+    pub color: bool,
+    pub unicode: bool,
+    pub annotations: bool,
+    pub json: bool,
+}
+
 impl FormatOptions {
-    /// Defaults for REPL mode: color + unicode + annotations on.
     pub fn repl_defaults() -> Self {
         Self {
             color: true,
@@ -54,23 +120,28 @@ impl FormatOptions {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Conversion result formatting
+// ---------------------------------------------------------------------------
+
 /// Format a conversion result according to the given options.
 pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String {
     if opts.json {
         return format_json(result, opts);
     }
 
+    let t = default_theme();
+    let c = opts.color;
+
     let sig_figs = opts.precision.unwrap_or(6);
     let exact = opts.precision.is_some();
 
-    // Format value.
     let value_str = if exact {
         format_value_inner(result.result.value, sig_figs, opts.scientific, true)
     } else {
         format_value(result.result.value, sig_figs, opts.scientific)
     };
 
-    // Format unit name.
     let raw_name = if opts.to_base {
         result.result.unit.to_base_unit_string()
     } else {
@@ -82,27 +153,17 @@ pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String 
         raw_name
     };
 
-    // Build the output string, with optional color + annotation.
-    if opts.color {
-        let mut out = format!("{} {}", value_str.bold(), unit_name.cyan());
-        if opts.annotations
-            && let Some(ann) = result.annotation
-        {
-            out.push_str(&format!(" {}", format!("[{}]", ann).dimmed()));
-        }
-        out
-    } else {
-        let mut out = format!("{} {}", value_str, unit_name);
-        if opts.annotations
-            && let Some(ann) = result.annotation
-        {
-            out.push_str(&format!(" [{}]", ann));
-        }
-        out
+    let mut out = format!("{} {}", t.num(&value_str, c), t.unit(&unit_name, c));
+
+    if opts.annotations
+        && let Some(ann) = result.annotation
+    {
+        out.push_str(&format!(" {}", t.dim(&format!("[{}]", ann), c)));
     }
+
+    out
 }
 
-/// Format as JSON (no color, no unicode).
 fn format_json(result: &ConversionResult, opts: &FormatOptions) -> String {
     let sig_figs = opts.precision.unwrap_or(6);
     let value_str = format_value(result.result.value, sig_figs, false);
@@ -116,6 +177,114 @@ fn format_json(result: &ConversionResult, opts: &FormatOptions) -> String {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Unit info formatting (? help)
+// ---------------------------------------------------------------------------
+
+/// Format unit info for the `?` help query in the REPL.
+pub fn format_unit_info(
+    unit: &crate::units::Unit,
+    aliases: &[String],
+    compatible: &[String],
+    annotation: Option<&str>,
+    opts: &FormatOptions,
+) -> String {
+    let t = default_theme();
+    let c = opts.color;
+    let mut lines = Vec::new();
+
+    let uni = |s: &str| -> String {
+        if opts.unicode {
+            unicode_unit_name(s)
+        } else {
+            s.to_string()
+        }
+    };
+
+    // Header: name (aliases)
+    let alias_str = if aliases.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", t.dim(&format!("({})", aliases.join(", ")), c))
+    };
+    lines.push(format!("{}{}", t.unit(&unit.name, c), alias_str));
+
+    // Quantity (from annotation registry)
+    if let Some(ann) = annotation {
+        lines.push(format!("  Quantity: {}", t.lbl(ann, c)));
+    }
+
+    // Dimensions: abstract analysis formula
+    let analysis = uni(&unit.analysis_string());
+    lines.push(format!("  Dimensions: {}", t.dim_sym(&analysis, c)));
+
+    // FUTURE(unit-systems): "[SI]" is hardcoded.
+    let base_fmt = uni(&unit.to_base_unit_string());
+    lines.push(format!(
+        "  Base unit: {}  {}",
+        t.unit(&base_fmt, c),
+        t.dim("[SI]", c)
+    ));
+
+    // Factor / status / affine
+    match &unit.conversion {
+        crate::units::unit::ConversionKind::Linear(f) if (*f - 1.0).abs() < 1e-15 => {
+            lines.push(format!("  {}", t.lbl("Reference unit", c)));
+        }
+        crate::units::unit::ConversionKind::Linear(f) => {
+            let val = format_value(*f, 6, false);
+            lines.push(format!(
+                "  Factor: {} {} = {} {}",
+                t.num("1", c),
+                t.unit(&unit.name, c),
+                t.num(&val, c),
+                t.unit(&base_fmt, c),
+            ));
+        }
+        crate::units::unit::ConversionKind::Affine { scale, offset } => {
+            lines.push(format!(
+                "  Affine: {} = value × {} + {}",
+                t.unit("K", c),
+                t.num(&scale.to_string(), c),
+                t.num(&offset.to_string(), c),
+            ));
+        }
+    }
+
+    // Prefix info
+    if let Some((prefix_name, scale)) = detect_si_prefix(&unit.name) {
+        let exp = scale.log10().round() as i32;
+        let exp_fmt = uni(&format!("^{}", exp));
+        lines.push(format!(
+            "  Prefix: {} ({}{})",
+            t.unit(prefix_name, c),
+            t.num("10", c),
+            t.num(&exp_fmt, c),
+        ));
+    }
+
+    // Compatible units — each name is a unit, so styled consistently
+    if !compatible.is_empty() {
+        let list = compatible
+            .iter()
+            .map(|u| t.unit(u, c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("  Compatible: {}", list));
+    }
+
+    // SI prefix note
+    if unit.prefixable {
+        lines.push(format!("  {}", t.dim("+ SI prefixes", c)));
+    }
+
+    lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Unicode rendering
+// ---------------------------------------------------------------------------
+
 /// Transform ASCII compound-unit names to Unicode.
 ///
 /// `*` → `·` (middle dot), `^N` → superscript digits.
@@ -126,12 +295,11 @@ pub fn unicode_unit_name(name: &str) -> String {
 
     while let Some(c) = chars.next() {
         match c {
-            '*' => out.push('\u{00B7}'), // middle dot
+            '*' => out.push('\u{00B7}'),
             '^' => {
-                // Consume the exponent: optional minus + digits.
                 while let Some(&next) = chars.peek() {
                     if next == '-' {
-                        out.push('\u{207B}'); // superscript minus
+                        out.push('\u{207B}');
                         chars.next();
                     } else if next.is_ascii_digit() {
                         out.push(superscript_digit(next));
@@ -163,101 +331,22 @@ fn superscript_digit(d: char) -> char {
     }
 }
 
-/// Format unit info for the `?` help query in the REPL.
-///
-/// Layout:
-/// ```text
-/// newton (N, newtons)
-///   Quantity: Force
-///   Dimensions: M·L·T⁻²  →  kg·m·s⁻²
-///   Compatible: dyne, kilogram_force, pound_force
-///   + SI prefixes
-/// ```
-pub fn format_unit_info(
-    unit: &crate::units::Unit,
-    aliases: &[String],
-    compatible: &[String],
-    annotation: Option<&str>,
-    opts: &FormatOptions,
-) -> String {
-    let mut lines = Vec::new();
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-    // Header: name (aliases)
-    let alias_str = if aliases.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", aliases.join(", "))
-    };
-    if opts.color {
-        lines.push(format!("{}{}", unit.name.cyan().bold(), alias_str.dimmed()));
-    } else {
-        lines.push(format!("{}{}", unit.name, alias_str));
-    }
-
-    // Quantity (from annotation registry — dynamic)
-    if let Some(ann) = annotation {
-        if opts.color {
-            lines.push(format!("  Quantity: {}", ann.bold()));
-        } else {
-            lines.push(format!("  Quantity: {}", ann));
+/// Detect if a unit name starts with a known SI prefix.
+fn detect_si_prefix(name: &str) -> Option<(&'static str, f64)> {
+    // FUTURE(alias-types): when units carry metadata about their prefix,
+    // this detection becomes unnecessary.
+    for &(long, _short, scale) in SI_PREFIXES {
+        if let Some(remainder) = name.strip_prefix(long)
+            && !remainder.is_empty()
+        {
+            return Some((long, scale));
         }
     }
-
-    // FUTURE(unit-systems): "[SI]" is hardcoded. When CGS/natural units land,
-    // derive the system label from the active unit system context.
-    // Dimensions: analysis symbols → base unit symbols
-    let analysis = unit.analysis_string();
-    let base = unit.to_base_unit_string();
-    let (analysis_fmt, base_fmt) = if opts.unicode {
-        (unicode_unit_name(&analysis), unicode_unit_name(&base))
-    } else {
-        (analysis, base)
-    };
-    // System label hardcoded to SI; Phase 5 makes it dynamic.
-    if opts.color {
-        lines.push(format!(
-            "  Dimensions: {}  →  {}  {}",
-            analysis_fmt,
-            base_fmt,
-            "[SI]".dimmed()
-        ));
-    } else {
-        lines.push(format!(
-            "  Dimensions: {}  →  {}  [SI]",
-            analysis_fmt, base_fmt
-        ));
-    }
-
-    // Base/derived + affine info
-    match &unit.conversion {
-        crate::units::unit::ConversionKind::Linear(f) if (*f - 1.0).abs() < 1e-15 => {
-            lines.push("  Reference unit".to_string());
-        }
-        crate::units::unit::ConversionKind::Affine { scale, offset } => {
-            lines.push(format!("  Affine: K = value × {} + {}", scale, offset));
-        }
-        _ => {} // Derived linear — no extra line, user can convert to see factor.
-    }
-
-    // Compatible units
-    if !compatible.is_empty() {
-        if opts.color {
-            lines.push(format!("  Compatible: {}", compatible.join(", ").dimmed()));
-        } else {
-            lines.push(format!("  Compatible: {}", compatible.join(", ")));
-        }
-    }
-
-    // SI prefix note for linear units
-    if !unit.is_affine() {
-        if opts.color {
-            lines.push(format!("  {}", "+ SI prefixes".dimmed()));
-        } else {
-            lines.push("  + SI prefixes".to_string());
-        }
-    }
-
-    lines.join("\n")
+    None
 }
 
 /// Determine whether to use color based on environment.
@@ -267,6 +356,10 @@ pub fn should_color(is_tty: bool) -> bool {
     }
     is_tty
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -328,5 +421,12 @@ mod tests {
     #[test]
     fn unicode_noop_on_simple_name() {
         assert_eq!(unicode_unit_name("meter"), "meter");
+    }
+
+    #[test]
+    fn theme_paint_no_color() {
+        let t = Theme::default();
+        assert_eq!(t.unit("meter", false), "meter");
+        assert_eq!(t.num("3.14", false), "3.14");
     }
 }

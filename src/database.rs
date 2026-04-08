@@ -19,7 +19,8 @@ use std::sync::OnceLock;
 
 /// SI metric prefixes: (long_name, symbol, scale_factor).
 /// Sorted by symbol length descending so "da" is tried before "d".
-const SI_PREFIXES: &[(&str, &str, f64)] = &[
+/// SI metric prefixes: (long_name, symbol, scale_factor).
+pub const SI_PREFIXES: &[(&str, &str, f64)] = &[
     ("yotta", "Y", 1e24),
     ("zetta", "Z", 1e21),
     ("exa", "E", 1e18),
@@ -112,25 +113,25 @@ impl UnitDatabase {
         info_only: bool,
     ) -> Option<Unit> {
         for &(long, short, scale) in prefixes {
-            // Try long name first, then symbol — both in the same loop.
+            // Try long name first, then symbol.
             for prefix in [long, short] {
                 if let Some(remainder) = name.strip_prefix(prefix) {
                     if remainder.is_empty() {
                         continue;
                     }
                     if let Some(base_unit) = self.units.get(remainder) {
-                        // Skip affine units — "kilocelsius" is nonsense.
-                        if base_unit.is_affine() {
+                        if !base_unit.prefixable {
                             continue;
                         }
-                        // When restricted to info, check the base unit's dimensions.
                         if info_only && !base_unit.dimensions.contains_key(&Dimension::Information)
                         {
                             continue;
                         }
-                        // Build the prefixed unit with scaled factor.
+                        // Build the prefixed unit: canonical name = long prefix + base name
+                        // e.g., "kN" → "kilonewton", "µs" → "microsecond"
                         let mut prefixed = base_unit.clone();
-                        prefixed.name = name.to_string();
+                        prefixed.name = format!("{}{}", long, base_unit.name);
+                        prefixed.prefixable = false;
                         match &mut prefixed.conversion {
                             ConversionKind::Linear(f) => *f *= scale,
                             ConversionKind::Affine { .. } => continue,
@@ -344,7 +345,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["gram", "g", "grams"],
-        Unit::new("gram", 1e-3, &[(Dimension::Mass, 1)]),
+        Unit::new_si("gram", 1e-3, &[(Dimension::Mass, 1)]),
     );
     add(
         map,
@@ -377,7 +378,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["liter", "l", "L", "litre", "liters", "litres"],
-        Unit::new("liter", 1e-3, &[(Dimension::Length, 3)]),
+        Unit::new_si("liter", 1e-3, &[(Dimension::Length, 3)]),
     );
     add(
         map,
@@ -458,7 +459,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["hertz", "Hz"],
-        Unit::new("hertz", 1.0, &[(Dimension::Time, -1)]),
+        Unit::new_si("hertz", 1.0, &[(Dimension::Time, -1)]),
     );
     add(
         map,
@@ -512,7 +513,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["newton", "N", "newtons"],
-        Unit::new("newton", 1.0, force_dims),
+        Unit::new_si("newton", 1.0, force_dims),
     );
     add(map, &["dyne", "dyn"], Unit::new("dyne", 1e-5, force_dims));
     add(
@@ -535,7 +536,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["pascal", "Pa", "pascals"],
-        Unit::new("pascal", 1.0, pressure_dims),
+        Unit::new_si("pascal", 1.0, pressure_dims),
     );
     add(map, &["bar", "bars"], Unit::new("bar", 1e5, pressure_dims));
     add(
@@ -569,7 +570,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["joule", "J", "joules"],
-        Unit::new("joule", 1.0, energy_dims),
+        Unit::new_si("joule", 1.0, energy_dims),
     );
     add(
         map,
@@ -589,7 +590,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["electronvolt", "eV"],
-        Unit::new("electronvolt", 1.602_176_634e-19, energy_dims),
+        Unit::new_si("electronvolt", 1.602_176_634e-19, energy_dims),
     );
 
     // ---- Power (M·L²·T⁻³) ----
@@ -601,7 +602,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["watt", "W", "watts"],
-        Unit::new("watt", 1.0, power_dims),
+        Unit::new_si("watt", 1.0, power_dims),
     );
     add(
         map,
@@ -680,7 +681,7 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     add(
         map,
         &["becquerel", "Bq"],
-        Unit::new("becquerel", 1.0, &[(Dimension::Time, -1)]),
+        Unit::new_si("becquerel", 1.0, &[(Dimension::Time, -1)]),
     );
     add(
         map,
@@ -689,11 +690,11 @@ fn seed_all(map: &mut HashMap<String, Unit>) {
     );
     // Absorbed dose (L²·T⁻²)
     let dose_dims = &[(Dimension::Length, 2), (Dimension::Time, -2)];
-    add(map, &["gray", "Gy"], Unit::new("gray", 1.0, dose_dims));
+    add(map, &["gray", "Gy"], Unit::new_si("gray", 1.0, dose_dims));
     add(
         map,
         &["sievert", "Sv"],
-        Unit::new("sievert", 1.0, dose_dims),
+        Unit::new_si("sievert", 1.0, dose_dims),
     );
 }
 

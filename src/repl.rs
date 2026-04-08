@@ -10,7 +10,6 @@ use crate::convert;
 use crate::database::{self, UnitDatabase};
 use crate::format::{self, FormatOptions};
 use crate::parser;
-use owo_colors::OwoColorize;
 use rustyline::Editor;
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
@@ -18,6 +17,7 @@ use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
+use std::borrow::Cow;
 use std::path::PathBuf;
 
 /// Rustyline helper providing tab-completion of unit names.
@@ -105,8 +105,101 @@ impl UnitsHelper {
 
 impl Hinter for UnitsHelper {
     type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        // Only hint at end of line (not mid-edit).
+        if pos < line.len() {
+            return None;
+        }
+
+        let word_start = line[..pos]
+            .rfind([' ', '*', '/', '(', '^', '?'])
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let partial = &line[word_start..pos];
+        if partial.is_empty()
+            || partial.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.')
+        {
+            return None;
+        }
+
+        let dims = self.source_dimensions(line);
+
+        // Find shortest prefix match — most likely intended unit.
+        self.db
+            .unit_names()
+            .filter(|name| name.starts_with(partial))
+            .filter(|name| match &dims {
+                Some(d) => self.db.lookup(name).is_some_and(|u| u.dimensions == *d),
+                None => true,
+            })
+            .min_by_key(|name| name.len())
+            .map(|name| name[partial.len()..].to_string())
+    }
 }
-impl Highlighter for UnitsHelper {}
+
+impl Highlighter for UnitsHelper {
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        if std::env::var_os("NO_COLOR").is_some() {
+            return Cow::Borrowed(line);
+        }
+
+        let t = format::default_theme();
+        let mut result = String::with_capacity(line.len() + 64);
+        let mut i = 0;
+        let bytes = line.as_bytes();
+
+        while i < bytes.len() {
+            if bytes[i] == b' ' || bytes[i] == b'\t' {
+                result.push(bytes[i] as char);
+                i += 1;
+                continue;
+            }
+
+            // "->" delimiter
+            if i + 1 < bytes.len() && &line[i..i + 2] == "->" {
+                result.push_str(&t.kw("->", true));
+                i += 2;
+                continue;
+            }
+
+            // Tokenize until next whitespace.
+            let start = i;
+            while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' {
+                i += 1;
+            }
+            let token = &line[start..i];
+
+            if token == "to" || token == "in" || token == "as" {
+                result.push_str(&t.kw(token, true));
+            } else if token.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {
+                result.push_str(&t.num(token, true));
+            } else if token == "?" || token == "quit" || token == "exit" {
+                result.push_str(token);
+            } else if self.db.lookup(token).is_some() {
+                result.push_str(&t.unit(token, true));
+            } else {
+                result.push_str(token);
+            }
+        }
+
+        Cow::Owned(result)
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        let t = format::default_theme();
+        Cow::Owned(t.dim(hint, true))
+    }
+
+    fn highlight_char(
+        &self,
+        _line: &str,
+        _pos: usize,
+        _kind: rustyline::highlight::CmdKind,
+    ) -> bool {
+        true
+    }
+}
 impl Validator for UnitsHelper {}
 impl Helper for UnitsHelper {}
 
@@ -139,18 +232,20 @@ pub fn run(opts: &FormatOptions) {
         let _ = rl.load_history(path);
     }
 
+    let t = format::default_theme();
+    let c = opts.color;
     println!(
         "{} {} — interactive mode. Type {} or {} to exit.",
-        "runits".bold(),
+        t.kw("runits", c),
         env!("CARGO_PKG_VERSION"),
-        "quit".cyan(),
-        "Ctrl-D".cyan(),
+        t.unit("quit", c),
+        t.unit("Ctrl-D", c),
     );
     println!(
         "Syntax: {} {} {}",
-        "<quantity>".dimmed(),
-        "->".bold(),
-        "<target>".dimmed(),
+        t.dim("<quantity>", c),
+        t.kw("->", c),
+        t.dim("<target>", c),
     );
 
     let db = database::global();
@@ -279,17 +374,25 @@ fn handle_quantity_help_from_qty(
     };
     println!("{}", format::format_result(&result, opts));
 
+    let t = format::default_theme();
+    let c = opts.color;
     let compatible = db.compatible_units(&qty.unit);
     if compatible.is_empty() {
-        println!("  No other compatible units in database.");
+        println!("  {}", t.dim("No other compatible units in database.", c));
     } else {
-        println!("  Compatible: {}", compatible.join(", "));
+        let list = compatible
+            .iter()
+            .map(|u| t.unit(u, c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("  Compatible: {}", list);
     }
 }
 
 fn print_error(e: &crate::error::RUnitsError, opts: &FormatOptions) {
+    let t = format::default_theme();
     if opts.color {
-        eprintln!("{}", format!("Error: {e}").red());
+        eprintln!("{}", t.err(&format!("Error: {e}"), true));
     } else {
         eprintln!("Error: {e}");
     }
