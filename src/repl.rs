@@ -12,8 +12,67 @@ use crate::format::{self, FormatOptions};
 use crate::parser;
 use owo_colors::OwoColorize;
 use rustyline::Editor;
+use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::validate::Validator;
+use rustyline::{Context, Helper};
 use std::path::PathBuf;
+
+/// Rustyline helper providing tab-completion of unit names.
+struct UnitsHelper {
+    db: &'static UnitDatabase,
+}
+
+impl Completer for UnitsHelper {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Pair>)> {
+        // Find the start of the current word: scan back from cursor to last delimiter.
+        let word_start = line[..pos]
+            .rfind([' ', '*', '/', '(', '^', '?'])
+            .map(|i| i + 1)
+            .unwrap_or(0);
+
+        // Skip if we're on a `?` prefix or the partial is empty.
+        let partial = &line[word_start..pos];
+        if partial.is_empty() || partial == "?" {
+            return Ok((pos, vec![]));
+        }
+
+        // Skip if partial looks like a number (don't complete digits).
+        if partial.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {
+            return Ok((pos, vec![]));
+        }
+
+        let mut matches: Vec<Pair> = self
+            .db
+            .unit_names()
+            .filter(|name| name.starts_with(partial))
+            .map(|name| Pair {
+                display: name.to_string(),
+                replacement: name.to_string(),
+            })
+            .collect();
+        matches.sort_by(|a, b| a.display.cmp(&b.display));
+        matches.truncate(20);
+
+        Ok((word_start, matches))
+    }
+}
+
+impl Hinter for UnitsHelper {
+    type Hint = String;
+}
+impl Highlighter for UnitsHelper {}
+impl Validator for UnitsHelper {}
+impl Helper for UnitsHelper {}
 
 /// Parse a REPL line into (source, target) by splitting on a delimiter.
 ///
@@ -33,7 +92,10 @@ pub fn parse_repl_line(line: &str) -> Option<(&str, &str)> {
 
 /// Run the interactive REPL loop.
 pub fn run(opts: &FormatOptions) {
-    let mut rl: Editor<(), _> = Editor::new().expect("failed to initialize line editor");
+    let mut rl = Editor::new().expect("failed to initialize line editor");
+    rl.set_helper(Some(UnitsHelper {
+        db: database::global(),
+    }));
 
     let history_path = config_dir().map(|d| d.join("history"));
     if let Some(ref path) = history_path {
