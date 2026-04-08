@@ -92,7 +92,7 @@ pub fn format_value(v: f64, sig_figs: usize, force_scientific: bool) -> String {
     format_value_inner(v, sig_figs, force_scientific, false)
 }
 
-fn format_value_inner(
+pub fn format_value_inner(
     v: f64,
     sig_figs: usize,
     force_scientific: bool,

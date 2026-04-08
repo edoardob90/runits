@@ -114,8 +114,10 @@ fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnits
         }
         Rule::unit_name => {
             let name = pair.as_str();
-            db.lookup(name)
-                .ok_or_else(|| RUnitsError::UnknownUnit(name.to_string()))
+            db.lookup(name).ok_or_else(|| RUnitsError::UnknownUnit {
+                suggestions: db.suggest(name, 3),
+                name: name.to_string(),
+            })
         }
         _ => unreachable!("unexpected rule in unit expression: {:?}", pair.as_rule()),
     }
@@ -207,7 +209,7 @@ mod tests {
         let db = UnitDatabase::new();
         let q = parse_quantity("100 km/h", &db).unwrap();
         assert_eq!(q.value, 100.0);
-        assert_eq!(q.unit.dimension_string(), "length/time");
+        assert_eq!(q.unit.dimension_string(), "length*time^-1");
     }
 
     #[test]
@@ -231,7 +233,7 @@ mod tests {
         let db = UnitDatabase::new();
         let q = parse_quantity("km/h", &db).unwrap();
         assert_eq!(q.value, 1.0);
-        assert_eq!(q.unit.dimension_string(), "length/time");
+        assert_eq!(q.unit.dimension_string(), "length*time^-1");
     }
 
     #[test]
@@ -246,7 +248,7 @@ mod tests {
     fn rejects_unknown_unit() {
         let db = UnitDatabase::new();
         let err = parse_quantity("10 foozle", &db).unwrap_err();
-        assert!(matches!(err, RUnitsError::UnknownUnit(_)));
+        assert!(matches!(err, RUnitsError::UnknownUnit { .. }));
         assert!(err.to_string().contains("foozle"));
     }
 
@@ -296,7 +298,7 @@ mod tests {
         let dims = u.dimension_string();
         assert!(dims.contains("mass"));
         assert!(dims.contains("length"));
-        assert!(dims.contains("time^2"));
+        assert!(dims.contains("time^-2"));
     }
 
     #[test]
@@ -307,14 +309,14 @@ mod tests {
         let dims = u.dimension_string();
         assert!(dims.contains("mass"));
         assert!(dims.contains("length"));
-        assert!(dims.contains("time^2"));
+        assert!(dims.contains("time^-2"));
     }
 
     #[test]
     fn compound_negative_exponent() {
         let db = UnitDatabase::new();
         let u = parse_unit_name("m^-1", &db).unwrap();
-        assert_eq!(u.dimension_string(), "1/length");
+        assert_eq!(u.dimension_string(), "length^-1");
     }
 
     #[test]
@@ -324,7 +326,7 @@ mod tests {
         let dims = u.dimension_string();
         assert!(dims.contains("mass"));
         assert!(dims.contains("length"));
-        assert!(dims.contains("time^2"));
+        assert!(dims.contains("time^-2"));
     }
 
     #[test]
@@ -334,7 +336,7 @@ mod tests {
         assert_eq!(q.value, 5.0);
         let dims = q.unit.dimension_string();
         assert!(dims.contains("mass"));
-        assert!(dims.contains("length^3"));
+        assert!(dims.contains("length^-3"));
     }
 
     #[test]

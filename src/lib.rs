@@ -47,9 +47,13 @@
 
 pub mod annotations;
 pub mod cli;
+pub mod config;
+pub mod convert;
 pub mod database;
 pub mod error;
+pub mod format;
 pub mod parser;
+pub mod repl;
 pub mod units;
 
 pub use error::RUnitsError;

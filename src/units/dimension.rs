@@ -104,6 +104,26 @@ impl Dimension {
         }
     }
 
+    /// Standard dimensional analysis symbol (M, L, T, Θ, I, N, J).
+    ///
+    /// These are the single-letter symbols used in physics for dimensional
+    /// analysis, distinct from both unit symbols (kg, m, s) and dimension
+    /// names (mass, length, time).
+    pub fn analysis_symbol(&self) -> &'static str {
+        match self {
+            Dimension::Length => "L",
+            Dimension::Mass => "M",
+            Dimension::Time => "T",
+            Dimension::Temperature => "Θ",
+            Dimension::Current => "I",
+            Dimension::AmountOfSubstance => "N",
+            Dimension::LuminousIntensity => "J",
+            Dimension::Angle => "A",
+            Dimension::Information => "B",
+            Dimension::Currency => "$",
+        }
+    }
+
     /// Returns the SI base unit symbol for this dimension.
     ///
     /// Used by `--to-base` to render dimensions as unit symbols.

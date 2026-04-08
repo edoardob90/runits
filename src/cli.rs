@@ -1,20 +1,21 @@
 //! clap-derived CLI argument layout.
 //!
-//! Two positional args (quantity, target) plus formatting flags.
+//! Supports one-shot conversion (`runits "10 ft" "m"`), REPL mode
+//! (`runits` with no args), batch mode (`--batch`), and subcommands.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 /// Convert quantities between units.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 pub struct Cli {
-    /// Quantity to convert, with source unit. Example: "10 ft"
-    pub quantity: String,
+    /// Quantity to convert (omit for REPL mode). Example: "10 ft"
+    pub quantity: Option<String>,
 
     /// Target unit. Example: "m"
-    pub target: String,
+    pub target: Option<String>,
 
-    /// Number of significant figures in output (default: 6)
+    /// Number of significant figures in output
     #[arg(short, long)]
     pub precision: Option<usize>,
 
@@ -25,4 +26,29 @@ pub struct Cli {
     /// Expand result unit to base SI components (e.g., newton → kg*m/s^2)
     #[arg(long)]
     pub to_base: bool,
+
+    /// Use Unicode symbols in output (kg·m/s² instead of kg*m/s^2)
+    #[arg(long)]
+    pub pretty: bool,
+
+    /// Output result as JSON
+    #[arg(long)]
+    pub json: bool,
+
+    /// Read conversions from stdin, one per line
+    #[arg(long)]
+    pub batch: bool,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }

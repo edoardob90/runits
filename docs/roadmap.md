@@ -88,7 +88,7 @@ Pick option 1 for Phase 3 — it composes with existing multiplicative `Mul`/`Di
 - **Shell completions** via `clap_complete` (bash/zsh/fish)
 - **Output modes**: plain (default), verbose (show conversion chain), JSON (scriptable)
 - **Batch mode**: one query per line from stdin
-- **Physical-quantity annotations in REPL** — the `[Velocity]`, `[Force]` etc. dimension-name annotations (Phase 3 registry) are shown only in interactive REPL mode, following Numbat's convention. CLI output stays clean for piping. Annotations may be colored/formatted when `owo-colors` is available.
+- **Physical-quantity annotations in REPL** — dimension-name annotations like "Velocity" and "Force" (Phase 3 registry) are shown only in interactive REPL mode, following Numbat's convention. CLI output stays clean for piping. Annotations may be colored/formatted when `owo-colors` is available.
 
 **Deliverable:** `runits` (no args) opens a REPL; typos suggest corrections; config respected.
 
@@ -169,7 +169,7 @@ Each item tagged with a **phase affinity** — when you're working on that phase
 | 12 | E=mc² energy↔mass equivalence | Deferred |
 | 13 | Frequency↔wavelength via c (λν=c) | 5 |
 | 14 | Fractional display (`2.5 ft` → `2 ft 6 in`) | 3 |
-| 15 | Named physical-quantity annotations: `3 m/s [Velocity]`, `9.81 m/s² [Acceleration]` via a dimension-signature → name registry (display side only, not type-system work). Registry built in Phase 3; display is REPL-only (Phase 4), following Numbat's convention — CLI output stays pipe-friendly. | 3/4 |
+| 15 | Named physical-quantity annotations (e.g. Velocity, Acceleration) via a dimension-signature → name registry (display side only, not type-system work). Registry built in Phase 3; display is REPL-only (Phase 4), following Numbat's convention — CLI output stays pipe-friendly. | 3/4 |
 
 ### Database & Data Enrichment
 

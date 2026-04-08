@@ -2,9 +2,7 @@
 //!
 //! All fallible public APIs return `Result<_, RUnitsError>`. The enum covers
 //! every failure mode the user might hit: an unknown unit name, incompatible
-//! dimensions during conversion, or a malformed input string. New variants
-//! are added at the module boundary where they originate (conversion errors
-//! come from `units::quantity`, parse errors from `parser`, etc.).
+//! dimensions during conversion, or a malformed input string.
 
 use thiserror::Error;
 
@@ -16,8 +14,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum RUnitsError {
     /// The parser couldn't resolve a unit name against the database.
-    #[error("unknown unit: '{0}'")]
-    UnknownUnit(String),
+    /// Carries fuzzy suggestions when available.
+    #[error("{}", format_unknown_unit(.name, .suggestions))]
+    UnknownUnit {
+        name: String,
+        suggestions: Vec<String>,
+    },
 
     /// Two units couldn't be converted because their dimensions differ
     /// (e.g., meters → kilograms).
@@ -40,4 +42,15 @@ pub enum RUnitsError {
     /// `RUnitsError` stays small (clippy's `result_large_err` guidance).
     #[error("parse error\n{0}")]
     Parse(#[from] Box<pest::error::Error<crate::parser::Rule>>),
+}
+
+fn format_unknown_unit(name: &str, suggestions: &[String]) -> String {
+    if suggestions.is_empty() {
+        format!("unknown unit: '{name}'")
+    } else {
+        format!(
+            "unknown unit: '{name}'. Did you mean: {}?",
+            suggestions.join(", ")
+        )
+    }
 }

@@ -322,8 +322,8 @@ impl Unit {
 
     /// Returns a human-readable description of what this unit measures.
     ///
-    /// Converts the unit's dimensional formula into a readable string format.
-    /// Positive exponents appear in the numerator, negative in the denominator.
+    /// Uses flat notation with negative exponents (no `/`).
+    /// Apply `unicode_unit_name()` for `length·time⁻¹` rendering.
     ///
     /// # Examples
     /// ```
@@ -337,91 +337,63 @@ impl Unit {
     ///     (Dimension::Length, 1),
     ///     (Dimension::Time, -1)
     /// ]);
-    /// assert_eq!(velocity.dimension_string(), "length/time");
+    /// assert_eq!(velocity.dimension_string(), "length*time^-1");
     ///
     /// let acceleration = Unit::new("acceleration", 1.0, &[
     ///     (Dimension::Length, 1),
     ///     (Dimension::Time, -2)
     /// ]);
-    /// assert_eq!(acceleration.dimension_string(), "length/time^2");
+    /// assert_eq!(acceleration.dimension_string(), "length*time^-2");
     /// ```
     pub fn dimension_string(&self) -> String {
-        // Convert {Length: 1, Time: -1} into "length/time"
-        // Examples:
-        // - {Length: 1} -> "length"
-        // - {Length: 1, Time: -1} -> "length/time"
-        // - {Mass: 1, Length: 1, Time: -2} -> "mass*length/time^2"
-        // - {Length: 2} -> "length^2"
-        let mut numerator: Vec<String> = Vec::new();
-        let mut denominator: Vec<String> = Vec::new();
-
-        // Loop over the dimensions
-        for (dimension, &exponent) in self.dimensions.iter() {
-            // We need a String not a &str
-            let dimension_name = dimension.name().to_string();
-            // Check the exponent
-            let dimension_str = if exponent.abs() == 1 {
-                dimension_name
-            } else {
-                format!("{}^{}", dimension_name, exponent.abs())
-            };
-            // Build the numerator or denominator
-            if exponent > 0 {
-                numerator.push(dimension_str);
-            } else {
-                denominator.push(dimension_str);
-            }
-        }
-
-        // Combine the numerator & denominator with correct separators
-        let numerator_str = numerator.join("*");
-        let denominator_str = denominator.join("*");
-
-        if denominator_str.is_empty() {
-            numerator_str
-        } else if numerator_str.is_empty() {
-            format!("1/{}", denominator_str)
-        } else {
-            format!("{}/{}", numerator_str, denominator_str)
-        }
+        self.render_dimensions(|d| d.name(), "dimensionless")
     }
 
     /// Render this unit's dimensions as base SI unit symbols with exponents.
     ///
-    /// Unlike [`dimension_string`](Self::dimension_string) which uses dimension
-    /// names ("length", "mass"), this uses SI symbols ("m", "kg", "s", etc.).
-    /// Used by the `--to-base` CLI flag.
+    /// Uses flat notation with negative exponents: `kg*m*s^-2` (no `/`).
+    /// Apply `unicode_unit_name()` to get `kg·m·s⁻²`.
     pub fn to_base_unit_string(&self) -> String {
-        let mut numerator: Vec<String> = Vec::new();
-        let mut denominator: Vec<String> = Vec::new();
+        self.render_dimensions(|d| d.base_symbol(), "dimensionless")
+    }
 
-        for (dimension, &exponent) in self.dimensions.iter() {
-            let symbol = dimension.base_symbol();
-            let part = if exponent.abs() == 1 {
-                symbol.to_string()
-            } else {
-                format!("{}^{}", symbol, exponent.abs())
-            };
-            if exponent > 0 {
-                numerator.push(part);
-            } else {
-                denominator.push(part);
-            }
-        }
+    /// Render the dimensional formula using standard analysis symbols (M, L, T, Θ, ...).
+    ///
+    /// Uses flat notation with negative exponents: `M*L*T^-2` (no `/`).
+    /// Apply `unicode_unit_name()` to get `M·L·T⁻²`.
+    pub fn analysis_string(&self) -> String {
+        self.render_dimensions(|d| d.analysis_symbol(), "1")
+    }
 
-        let num = numerator.join("*");
-        let den = denominator.join("*");
+    /// Shared helper: render dimensions as `sym1*sym2*sym3^-N` (flat, no `/`).
+    fn render_dimensions(&self, symbol_fn: fn(&Dimension) -> &str, empty: &str) -> String {
+        // Collect and sort: positive exponents first (descending), then
+        // negative (ascending). Within each group, alphabetical by symbol.
+        let mut entries: Vec<_> = self
+            .dimensions
+            .iter()
+            .map(|(d, &e)| (symbol_fn(d), e))
+            .collect();
+        entries.sort_by(|a, b| {
+            // Positive before negative, then alphabetical.
+            b.1.signum().cmp(&a.1.signum()).then(a.0.cmp(b.0))
+        });
 
-        if den.is_empty() {
-            if num.is_empty() {
-                "dimensionless".to_string()
-            } else {
-                num
-            }
-        } else if num.is_empty() {
-            format!("1/{}", den)
+        let parts: Vec<String> = entries
+            .iter()
+            .map(|(sym, exp)| {
+                if *exp == 1 {
+                    sym.to_string()
+                } else {
+                    format!("{}^{}", sym, exp)
+                }
+            })
+            .collect();
+
+        if parts.is_empty() {
+            empty.to_string()
         } else {
-            format!("{}/{}", num, den)
+            parts.join("*")
         }
     }
 }
@@ -546,7 +518,7 @@ mod tests {
 
         assert_eq!(velocity.name, "meter/second");
         assert_eq!(velocity.conversion_factor(), 1.0);
-        assert_eq!(velocity.dimension_string(), "length/time");
+        assert_eq!(velocity.dimension_string(), "length*time^-1");
     }
 
     #[test]
@@ -575,9 +547,9 @@ mod tests {
         let ltr_dims = ltr.dimension_string();
 
         assert_ne!(ltr_dims, with_parens.dimension_string());
-        assert!(ltr_dims.contains("/time"));
+        assert!(ltr_dims.contains("time^-1"));
         assert!(ltr_dims.contains("length") && ltr_dims.contains("mass"));
-        assert!(with_parens.dimension_string().contains("length/"));
+        assert!(with_parens.dimension_string().contains("length"));
     }
 
     #[test]
@@ -619,7 +591,7 @@ mod tests {
             1.0,
             &[(Dimension::Length, 1), (Dimension::Time, -1)],
         );
-        assert_eq!(velocity.dimension_string(), "length/time");
+        assert_eq!(velocity.dimension_string(), "length*time^-1");
 
         // Test acceleration (length/time^2)
         let acceleration = Unit::new(
@@ -627,7 +599,7 @@ mod tests {
             1.0,
             &[(Dimension::Length, 1), (Dimension::Time, -2)],
         );
-        assert_eq!(acceleration.dimension_string(), "length/time^2");
+        assert_eq!(acceleration.dimension_string(), "length*time^-2");
 
         // Test force (mass*length/time^2)
         let force = Unit::new(
@@ -644,7 +616,7 @@ mod tests {
         let result = force.dimension_string();
         assert!(result.contains("mass"));
         assert!(result.contains("length"));
-        assert!(result.contains("time^2"));
+        assert!(result.contains("time^-2"));
     }
 
     // ---- Temperature conversion tests ----

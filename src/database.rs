@@ -87,7 +87,14 @@ impl UnitDatabase {
             return Some(u);
         }
         // 3. Try binary prefix stripping (information units only).
-        self.try_prefix_strip(name, BINARY_PREFIXES, true)
+        if let Some(u) = self.try_prefix_strip(name, BINARY_PREFIXES, true) {
+            return Some(u);
+        }
+        // FUTURE(alias-types): No case-insensitive fallback here. Unit symbols
+        // are case-sensitive (Mm ≠ mm, K ≠ k, Ci ≠ ci). When the database
+        // gains symbol vs full-name alias distinction (see Numbat's short/both/
+        // none modes), enable case-insensitive lookup for full names only.
+        None
     }
 
     /// Try to split `name` into a known prefix + a known base unit.
@@ -134,6 +141,78 @@ impl UnitDatabase {
             }
         }
         None
+    }
+
+    /// Iterate over all registered alias strings.
+    ///
+    /// Exposes the HashMap keys without exposing `Unit` values. Used by
+    /// fuzzy matching and REPL tab-completion.
+    pub fn unit_names(&self) -> impl Iterator<Item = &str> {
+        self.units.keys().map(|s| s.as_str())
+    }
+
+    /// Suggest the closest known unit names for a misspelled input.
+    ///
+    /// FUTURE(alias-types): Scoring is case-insensitive, which is safe for
+    /// suggestions (advisory, not resolution). When symbol vs name aliases
+    /// are distinguished, suggestions could rank name-matches higher.
+    ///
+    /// Uses Jaro-Winkler similarity (weights prefix matches heavily — good
+    /// for typos where the first few characters are correct). Returns up to
+    /// `max` suggestions, deduplicated by canonical unit name.
+    pub fn suggest(&self, unknown: &str, max: usize) -> Vec<String> {
+        use std::collections::HashSet;
+
+        // Compare lowercased for case-insensitive scoring, return original alias.
+        let unknown_lower = unknown.to_lowercase();
+        let mut scored: Vec<_> = self
+            .units
+            .iter()
+            .map(|(alias, unit)| {
+                let score = strsim::jaro_winkler(&unknown_lower, &alias.to_lowercase());
+                (alias.as_str(), unit.name.as_str(), score)
+            })
+            .filter(|(_, _, score)| *score > 0.7)
+            .collect();
+        scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+
+        // Deduplicate by canonical name (many aliases → same unit).
+        let mut seen = HashSet::new();
+        scored
+            .into_iter()
+            .filter(|(_, canonical, _)| seen.insert(canonical.to_string()))
+            .take(max)
+            .map(|(alias, _, _)| alias.to_string())
+            .collect()
+    }
+
+    /// Find all canonical unit names compatible with `unit` (same dimensions).
+    ///
+    /// Returns deduplicated canonical names, sorted alphabetically,
+    /// excluding the query unit's own canonical name.
+    pub fn compatible_units(&self, unit: &Unit) -> Vec<String> {
+        use std::collections::BTreeSet;
+        let mut names = BTreeSet::new();
+        for u in self.units.values() {
+            if u.is_compatible_with(unit) && u.name != unit.name {
+                names.insert(u.name.clone());
+            }
+        }
+        names.into_iter().collect()
+    }
+
+    /// Find all alias strings that map to a given canonical unit name.
+    ///
+    /// Returns sorted aliases, excluding the canonical name itself.
+    pub fn aliases_for(&self, canonical: &str) -> Vec<String> {
+        let mut aliases: Vec<String> = self
+            .units
+            .iter()
+            .filter(|(alias, unit)| unit.name == canonical && alias.as_str() != canonical)
+            .map(|(alias, _)| alias.clone())
+            .collect();
+        aliases.sort();
+        aliases
     }
 
     /// How many aliases are currently registered (every alias counts).
@@ -655,7 +734,7 @@ mod tests {
     fn compound_alias_m_per_s_is_velocity() {
         let db = UnitDatabase::new();
         let u = db.lookup("m/s").unwrap();
-        assert_eq!(u.dimension_string(), "length/time");
+        assert_eq!(u.dimension_string(), "length*time^-1");
     }
 
     #[test]
@@ -763,5 +842,79 @@ mod tests {
         // NOT "d" (deci) + "ag" (no such unit)
         let u = db.lookup("dag").unwrap();
         assert!((u.conversion_factor() - 0.01).abs() < 1e-15);
+    }
+
+    // ---- Fuzzy suggestion tests ----
+
+    #[test]
+    fn suggest_typo_returns_matches() {
+        let db = UnitDatabase::new();
+        let suggestions = db.suggest("meterr", 3);
+        assert!(!suggestions.is_empty());
+        assert!(suggestions.contains(&"meter".to_string()));
+    }
+
+    #[test]
+    fn suggest_gibberish_returns_empty() {
+        let db = UnitDatabase::new();
+        let suggestions = db.suggest("xyzzy", 3);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn suggest_deduplicates_by_canonical_name() {
+        let db = UnitDatabase::new();
+        // "meters" and "metres" both map to canonical "meter" — only one should appear.
+        let suggestions = db.suggest("meter", 5);
+        let meter_count = suggestions.iter().filter(|s| *s == "meter").count();
+        assert!(meter_count <= 1);
+    }
+
+    #[test]
+    fn unit_names_yields_all_aliases() {
+        let db = UnitDatabase::new();
+        let names: Vec<&str> = db.unit_names().collect();
+        assert!(names.contains(&"meter"));
+        assert!(names.contains(&"ft"));
+        assert!(names.contains(&"degC"));
+    }
+
+    // ---- Compatible units + aliases tests ----
+
+    #[test]
+    fn compatible_units_for_meter() {
+        let db = UnitDatabase::new();
+        let meter = db.lookup("meter").unwrap();
+        let compat = db.compatible_units(&meter);
+        assert!(compat.contains(&"foot".to_string()));
+        assert!(compat.contains(&"mile".to_string()));
+        assert!(compat.contains(&"inch".to_string()));
+        assert!(!compat.contains(&"meter".to_string())); // excludes self
+        assert!(!compat.contains(&"second".to_string())); // wrong dimension
+    }
+
+    #[test]
+    fn compatible_units_for_newton() {
+        let db = UnitDatabase::new();
+        let newton = db.lookup("N").unwrap();
+        let compat = db.compatible_units(&newton);
+        assert!(compat.contains(&"dyne".to_string()));
+        assert!(compat.contains(&"pound_force".to_string()));
+    }
+
+    #[test]
+    fn aliases_for_meter() {
+        let db = UnitDatabase::new();
+        let aliases = db.aliases_for("meter");
+        assert!(aliases.contains(&"m".to_string()));
+        assert!(aliases.contains(&"meters".to_string()));
+        assert!(aliases.contains(&"metres".to_string()));
+        assert!(!aliases.contains(&"meter".to_string())); // excludes canonical
+    }
+
+    #[test]
+    fn aliases_for_unknown_returns_empty() {
+        let db = UnitDatabase::new();
+        assert!(db.aliases_for("xyzzy").is_empty());
     }
 }

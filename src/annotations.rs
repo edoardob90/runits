@@ -2,7 +2,7 @@
 //!
 //! Maps a unit's [`DimensionMap`] to a human-readable quantity name like
 //! "Velocity" or "Force". Used to annotate conversion output:
-//! `27.7778 meter/second [Velocity]`.
+//! `27.7778 meter/second` with annotation "Velocity".
 //!
 //! The registry covers the ~25 most useful named quantities, using Numbat's
 //! `core/dimensions.nbt` as reference.
@@ -62,6 +62,20 @@ fn key(pairs: &[(Dimension, i8)]) -> String {
 
 fn build_registry() -> Registry {
     let mut r = Registry::new();
+
+    // Base dimensions (single-dimension entries for bare quantity echo)
+    r.insert(key(&[(Dimension::Length, 1)]), "Length");
+    r.insert(key(&[(Dimension::Mass, 1)]), "Mass");
+    r.insert(key(&[(Dimension::Time, 1)]), "Time");
+    r.insert(key(&[(Dimension::Temperature, 1)]), "Temperature");
+    r.insert(key(&[(Dimension::Current, 1)]), "Current");
+    r.insert(key(&[(Dimension::AmountOfSubstance, 1)]), "Amount");
+    r.insert(
+        key(&[(Dimension::LuminousIntensity, 1)]),
+        "Luminous Intensity",
+    );
+    r.insert(key(&[(Dimension::Angle, 1)]), "Angle");
+    r.insert(key(&[(Dimension::Information, 1)]), "Information");
 
     // Mechanical
     r.insert(
@@ -260,8 +274,15 @@ mod tests {
     }
 
     #[test]
-    fn unknown_dimensions_return_none() {
+    fn base_dimension_annotates() {
         let d = dims(&[(Dimension::Length, 1)]);
+        assert_eq!(quantity_name(&d), Some("Length"));
+    }
+
+    #[test]
+    fn unknown_dimensions_return_none() {
+        // A combination not in the registry.
+        let d = dims(&[(Dimension::Length, 4)]);
         assert_eq!(quantity_name(&d), None);
     }
 

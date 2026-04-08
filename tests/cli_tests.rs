@@ -154,6 +154,17 @@ fn unknown_target_unit_fails() {
 }
 
 #[test]
+fn typo_suggests_correction() {
+    runits()
+        .arg("10 meterr")
+        .arg("m")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Did you mean"));
+}
+
+#[test]
 fn bare_number_without_unit_fails_with_parse_error() {
     // "10" alone fails the grammar: either it's a number that needs a
     // following unit_name (missing whitespace+unit), or it's a unit_name
@@ -169,13 +180,13 @@ fn bare_number_without_unit_fails_with_parse_error() {
 
 #[test]
 fn missing_target_arg_is_usage_error() {
-    // clap uses exit code 2 for its own errors (bad usage, missing args).
+    // With optional positionals, giving only one arg hits our usage message.
     runits()
         .arg("10 m")
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains("required"));
+        .stderr(predicate::str::contains("Usage"));
 }
 
 // ---- Temperature conversions (Phase 3) ----
