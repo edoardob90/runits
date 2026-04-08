@@ -59,7 +59,6 @@ pub fn colored_dimensions(
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // FormatOptions
 // ---------------------------------------------------------------------------
@@ -197,23 +196,15 @@ pub fn format_unit_info(
     lines.push(format!("  {} {}", t.dim("Dimensions:"), dims_colored));
 
     // System base unit — FUTURE(unit-systems): UNIT_SYSTEM becomes dynamic
-    let base_colored = colored_dimensions(
-        &unit.dimensions,
-        Dimension::base_symbol,
-        opts.unicode,
-        &t,
-    );
+    let base_colored =
+        colored_dimensions(&unit.dimensions, Dimension::base_symbol, opts.unicode, &t);
     let sys_label = format!("{} base:", UNIT_SYSTEM);
     lines.push(format!("  {} {}", t.dim(&sys_label), base_colored));
 
     // Factor / status / affine
     match &unit.conversion {
         crate::units::unit::ConversionKind::Linear(f) if (*f - 1.0).abs() < 1e-15 => {
-            lines.push(format!(
-                "  {} {} (reference)",
-                t.dim("Factor:"),
-                t.num("1")
-            ));
+            lines.push(format!("  {} {} (reference)", t.dim("Factor:"), t.num("1")));
         }
         crate::units::unit::ConversionKind::Linear(f) => {
             let val = format_value(*f, 6, false);
@@ -410,5 +401,4 @@ mod tests {
     fn unicode_noop_on_simple_name() {
         assert_eq!(unicode_unit_name("meter"), "meter");
     }
-
 }
