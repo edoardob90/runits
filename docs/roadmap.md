@@ -15,10 +15,10 @@ This file is embedded into the rustdoc site and rendered as a chapter there.
 | 1.5 — Documentation Foundation | ✅ Complete | Rustdoc on all public APIs; doc-tests; GitHub Actions → GitHub Pages |
 | 2 — Functional CLI | ✅ Complete | clap, pest parser, UnitDatabase (~80 aliases), thiserror; 6-sig-fig adaptive output formatter; bare unit names accepted |
 | 3 — Rich Conversions | ✅ Complete | ConversionKind enum (affine); temperature (C/F/K/Ra/Ré); SI prefixes (24) + binary (6); compound-unit grammar (`kg*m/s^2`); `--precision`/`--scientific`/`--to-base` flags; annotations registry; ~63 units + force/pressure/energy/power/historical/cooking/astronomical/radioactivity |
-| 4 — Interactive Experience | ⏳ Next | REPL, fuzzy suggestions, colors, Unicode rendering, config |
-| 5 — Extensibility | ⏳ Planned | Custom units, constants, expressions |
+| 4 — Interactive Experience | ⏳ Active | REPL (rustyline), dimension-based color theme (Flexoki-inspired), Fish-style hinter + syntax highlighter, dimension-aware tab-completion, `?` help with analysis/base-unit/factor, fuzzy suggestions (strsim), `--json`/`--pretty`/`--batch`, TOML config, shell completions, `Unit.prefixable` |
+| 5 — Extensibility | ⏳ Planned | Custom units, constants, expressions, GNU units parser |
 
-**Test suite (latest):** 79 unit tests + 9 doc tests + 18 integration tests = 106 total, all passing. Dependencies: clap, pest, pest_derive, thiserror (dev: assert_cmd, predicates). Clean clippy, clean fmt.
+**Test suite (latest):** 112 unit tests + 9 doc tests + 19 integration tests = 140 total, all passing. Dependencies: clap, clap_complete, pest, pest_derive, thiserror, owo-colors, rustyline, strsim, serde, toml (dev: assert_cmd, predicates). Clean clippy, clean fmt.
 
 For a detailed change history, see `git log`.
 
@@ -125,6 +125,7 @@ Architecturally interesting work with narrower user value — tackle when motiva
 - **Currency conversion** with live exchange-rate API (e.g., exchangerate.host). Requires HTTP client + cache layer.
 - **TUI mode** (`runits --tui`) via `ratatui` — a standalone full-screen interactive mode, separate from the REPL. Live dropdown fuzzy picker, side panel with unit info, dimension-colored suggestions. This is *not* a replacement for the REPL — it's an alternative interface. The REPL uses rustyline with progressively enhanced Fish-style completion (hinter, highlighter, dimension-aware tab); the TUI is a distinct full-screen experience with fzf-style filtering.
 - **WASM target** with a small web playground.
+- **Error message polish** — current error messages are functional but basic. Improvements: dimension-colored dimension names in error output, suggested conversions ("did you mean to convert to a Force unit?"), `miette`/`ariadne` source spans for parse errors. Could be a Phase 6 "general polish" pass.
 - **Quality tooling**: criterion benchmarks, proptest round-trip tests, cargo-fuzz on the parser, cargo-dist release packaging, Homebrew tap.
 
 ---

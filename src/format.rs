@@ -10,6 +10,7 @@
 
 use crate::convert::ConversionResult;
 use crate::database::SI_PREFIXES;
+use crate::units::dimension::Dimension;
 use crate::units::quantity::{format_value, format_value_inner};
 use owo_colors::Style;
 
@@ -17,25 +18,30 @@ use owo_colors::Style;
 // Theme — semantic color roles
 // ---------------------------------------------------------------------------
 
-/// Semantic color roles for consistent styling across all output.
+/// Dimension-based color theme for consistent styling.
 ///
-/// Defaults are Flexoki-inspired ANSI colors. FUTURE: loadable from
-/// config.toml `[theme]` with hex/truecolor support.
+/// Each base dimension has its own color. Units inherit color from their
+/// dimension (single-dimension) or use the compound style (multi-dimension).
+/// Flexoki-inspired ANSI defaults. FUTURE: loadable from config.toml.
 #[derive(Debug, Clone)]
 pub struct Theme {
-    /// Unit names and symbols: meter, ft, N, kg·m·s⁻²
-    pub unit: Style,
-    /// Dimension analysis symbols: L, M, T, Θ
-    pub dimension: Style,
-    /// Numeric values: 0.3048, 1000, 10³
+    // Per-dimension colors
+    pub length: Style,
+    pub mass: Style,
+    pub time: Style,
+    pub temperature: Style,
+    pub current: Style,
+    pub amount: Style,
+    pub intensity: Style,
+    pub angle: Style,
+    pub information: Style,
+    pub currency: Style,
+    // Compound/derived quantity color (Force, Velocity, etc.)
+    pub compound: Style,
+    // Utility styles
     pub number: Style,
-    /// Conversion keywords: ->, to, in, as
     pub keyword: Style,
-    /// Important label values: Force, Velocity, Reference unit
-    pub label_value: Style,
-    /// Secondary info: aliases, compatible list, system tag, hints, + SI prefixes
     pub dimmed: Style,
-    /// Error messages
     pub error: Style,
 }
 
@@ -43,11 +49,19 @@ impl Default for Theme {
     /// Flexoki-inspired ANSI defaults.
     fn default() -> Self {
         Self {
-            unit: Style::new().cyan(),
-            dimension: Style::new().blue().bold(),
+            length: Style::new().blue(),
+            mass: Style::new().red(),
+            time: Style::new().green(),
+            temperature: Style::new().truecolor(218, 112, 44), // Flexoki orange
+            current: Style::new().yellow(),
+            amount: Style::new().magenta(),
+            intensity: Style::new().bright_magenta(),
+            angle: Style::new().cyan(),
+            information: Style::new().bright_blue(),
+            currency: Style::new().bright_yellow(),
+            compound: Style::new().bright_white().bold(),
             number: Style::new().yellow(),
-            keyword: Style::new().bold(),
-            label_value: Style::new().bold(),
+            keyword: Style::new().dimmed().bold(),
             dimmed: Style::new().dimmed(),
             error: Style::new().red(),
         }
@@ -64,12 +78,38 @@ impl Theme {
         }
     }
 
-    // Convenience methods for common roles.
-    pub fn unit(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.unit, color)
+    /// Style for a specific dimension.
+    pub fn dimension_style(&self, dim: &Dimension) -> &Style {
+        match dim {
+            Dimension::Length => &self.length,
+            Dimension::Mass => &self.mass,
+            Dimension::Time => &self.time,
+            Dimension::Temperature => &self.temperature,
+            Dimension::Current => &self.current,
+            Dimension::AmountOfSubstance => &self.amount,
+            Dimension::LuminousIntensity => &self.intensity,
+            Dimension::Angle => &self.angle,
+            Dimension::Information => &self.information,
+            Dimension::Currency => &self.currency,
+        }
     }
-    pub fn dim_sym(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.dimension, color)
+
+    /// Style for a unit based on its dimensions.
+    /// Single-dimension → that dimension's color.
+    /// Multi-dimension (compound) → compound style.
+    /// Dimensionless → compound style.
+    pub fn unit_style(&self, unit: &crate::units::Unit) -> &Style {
+        if unit.dimensions.len() == 1 {
+            let (dim, _) = unit.dimensions.iter().next().unwrap();
+            self.dimension_style(dim)
+        } else {
+            &self.compound
+        }
+    }
+
+    // Convenience methods.
+    pub fn unit_text(&self, text: &str, unit: &crate::units::Unit, color: bool) -> String {
+        self.paint(text, self.unit_style(unit), color)
     }
     pub fn num(&self, text: &str, color: bool) -> String {
         self.paint(text, &self.number, color)
@@ -78,13 +118,56 @@ impl Theme {
         self.paint(text, &self.keyword, color)
     }
     pub fn lbl(&self, text: &str, color: bool) -> String {
-        self.paint(text, &self.label_value, color)
+        self.paint(text, &self.compound, color) // labels use compound/bold style
     }
     pub fn dim(&self, text: &str, color: bool) -> String {
         self.paint(text, &self.dimmed, color)
     }
     pub fn err(&self, text: &str, color: bool) -> String {
         self.paint(text, &self.error, color)
+    }
+}
+
+/// Render a dimension map with per-dimension coloring.
+///
+/// Each symbol is colored by its dimension; exponents use number color.
+/// Separators use `·` (unicode) or `*` (ascii).
+pub fn colored_dimensions(
+    dims: &crate::units::dimension::DimensionMap,
+    symbol_fn: fn(&Dimension) -> &str,
+    unicode: bool,
+    theme: &Theme,
+    color: bool,
+) -> String {
+    use crate::units::unit::Unit;
+    // Sort: positive exponents first, then alphabetical by symbol.
+    let mut entries: Vec<_> = dims.iter().map(|(d, &e)| (d, symbol_fn(d), e)).collect();
+    entries.sort_by(|a, b| b.2.signum().cmp(&a.2.signum()).then(a.1.cmp(b.1)));
+
+    let sep = if unicode { "\u{00B7}" } else { "*" };
+    let parts: Vec<String> = entries
+        .iter()
+        .map(|(dim, sym, exp)| {
+            let styled_sym = theme.paint(sym, theme.dimension_style(dim), color);
+            if *exp == 1 {
+                styled_sym
+            } else {
+                let exp_str = if unicode {
+                    unicode_unit_name(&format!("^{}", exp))
+                } else {
+                    format!("^{}", exp)
+                };
+                format!("{}{}", styled_sym, theme.num(&exp_str, color))
+            }
+        })
+        .collect();
+
+    if parts.is_empty() {
+        // Use a dummy dimensionless unit to pick style
+        let _ = Unit::dimensionless();
+        "dimensionless".to_string()
+    } else {
+        parts.join(sep)
     }
 }
 
@@ -153,7 +236,11 @@ pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String 
         raw_name
     };
 
-    let mut out = format!("{} {}", t.num(&value_str, c), t.unit(&unit_name, c));
+    let mut out = format!(
+        "{} {}",
+        t.num(&value_str, c),
+        t.unit_text(&unit_name, &result.result.unit, c)
+    );
 
     if opts.annotations
         && let Some(ann) = result.annotation
@@ -201,28 +288,46 @@ pub fn format_unit_info(
         }
     };
 
-    // Header: name (aliases)
+    // Header: name (aliases) — colored by unit's dimension
     let alias_str = if aliases.is_empty() {
         String::new()
     } else {
         format!(" {}", t.dim(&format!("({})", aliases.join(", ")), c))
     };
-    lines.push(format!("{}{}", t.unit(&unit.name, c), alias_str));
+    lines.push(format!("{}{}", t.unit_text(&unit.name, unit, c), alias_str));
 
-    // Quantity (from annotation registry)
+    // Quantity (from annotation registry) — same color as the unit
     if let Some(ann) = annotation {
-        lines.push(format!("  Quantity: {}", t.lbl(ann, c)));
+        lines.push(format!(
+            "  {} {}",
+            t.dim("Quantity:", c),
+            t.unit_text(ann, unit, c)
+        ));
     }
 
-    // Dimensions: abstract analysis formula
-    let analysis = uni(&unit.analysis_string());
-    lines.push(format!("  Dimensions: {}", t.dim_sym(&analysis, c)));
+    // Dimensions: each symbol colored by its dimension
+    let dims_colored = colored_dimensions(
+        &unit.dimensions,
+        Dimension::analysis_symbol,
+        opts.unicode,
+        &t,
+        c,
+    );
+    lines.push(format!("  {} {}", t.dim("Dimensions:", c), dims_colored));
 
     // FUTURE(unit-systems): "[SI]" is hardcoded.
-    let base_fmt = uni(&unit.to_base_unit_string());
+    // Base unit: each component colored by its dimension
+    let base_colored = colored_dimensions(
+        &unit.dimensions,
+        Dimension::base_symbol,
+        opts.unicode,
+        &t,
+        c,
+    );
     lines.push(format!(
-        "  Base unit: {}  {}",
-        t.unit(&base_fmt, c),
+        "  {} {}  {}",
+        t.dim("Base unit:", c),
+        base_colored,
         t.dim("[SI]", c)
     ));
 
@@ -234,17 +339,19 @@ pub fn format_unit_info(
         crate::units::unit::ConversionKind::Linear(f) => {
             let val = format_value(*f, 6, false);
             lines.push(format!(
-                "  Factor: {} {} = {} {}",
+                "  {} {} {} = {} {}",
+                t.dim("Factor:", c),
                 t.num("1", c),
-                t.unit(&unit.name, c),
+                t.unit_text(&unit.name, unit, c),
                 t.num(&val, c),
-                t.unit(&base_fmt, c),
+                base_colored,
             ));
         }
         crate::units::unit::ConversionKind::Affine { scale, offset } => {
             lines.push(format!(
-                "  Affine: {} = value × {} + {}",
-                t.unit("K", c),
+                "  {} {} = value × {} + {}",
+                t.dim("Affine:", c),
+                t.paint("K", t.dimension_style(&Dimension::Temperature), c),
                 t.num(&scale.to_string(), c),
                 t.num(&offset.to_string(), c),
             ));
@@ -256,21 +363,23 @@ pub fn format_unit_info(
         let exp = scale.log10().round() as i32;
         let exp_fmt = uni(&format!("^{}", exp));
         lines.push(format!(
-            "  Prefix: {} ({}{})",
-            t.unit(prefix_name, c),
+            "  {} {} ({}{})",
+            t.dim("Prefix:", c),
+            t.unit_text(prefix_name, unit, c),
             t.num("10", c),
             t.num(&exp_fmt, c),
         ));
     }
 
-    // Compatible units — each name is a unit, so styled consistently
+    // Compatible units — same dimensions as queried unit, same color
     if !compatible.is_empty() {
+        let style = t.unit_style(unit);
         let list = compatible
             .iter()
-            .map(|u| t.unit(u, c))
+            .map(|u| t.paint(u, style, c))
             .collect::<Vec<_>>()
             .join(", ");
-        lines.push(format!("  Compatible: {}", list));
+        lines.push(format!("  {} {}", t.dim("Compatible:", c), list));
     }
 
     // SI prefix note
@@ -426,7 +535,8 @@ mod tests {
     #[test]
     fn theme_paint_no_color() {
         let t = Theme::default();
-        assert_eq!(t.unit("meter", false), "meter");
+        let meter = crate::units::Unit::meter();
+        assert_eq!(t.unit_text("meter", &meter, false), "meter");
         assert_eq!(t.num("3.14", false), "3.14");
     }
 }

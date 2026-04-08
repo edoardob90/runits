@@ -63,9 +63,44 @@ $ runits --to-base "1 newton" "kg*m/s^2"
 - **Output control**: `--precision`, `--scientific`, `--to-base` flags
 - **Clear error messages** for unknown units, incompatible dimensions, and parse failures
 
+### Interactive REPL
+
+```
+$ runits
+>>> 100 km/h -> m/s
+27.7778 meter/second [Velocity]
+
+>>> ? N
+newton (N, newtons)
+  Quantity: Force
+  Dimensions: L·M·T⁻²
+  Base unit: kg·m·s⁻²  [SI]
+  Reference unit
+  Compatible: dyne, kilogram_force, pound_force
+  + SI prefixes
+
+>>> 10 ft
+10 foot [Length]
+```
+
+- Dimension-based color theme (Flexoki-inspired): Length=blue, Mass=red, Time=green, etc.
+- Fish-style inline hints + syntax highlighting as you type
+- Dimension-aware tab-completion (after `->` only compatible units are suggested)
+- `?` queries for unit info, `quantity -> ?` to explore compatible targets
+- Persistent history at `~/.config/runits/history`
+
+### Additional Features
+
+- **JSON output**: `runits --json "10 ft" "m"`
+- **Batch mode**: `echo "10 ft -> m" | runits --batch`
+- **Unicode rendering**: `runits --pretty "1 N" "N"` → `1 kg·m·s⁻²`
+- **Shell completions**: `runits completions bash/zsh/fish`
+- **TOML config**: `~/.config/runits/config.toml` for default precision, color, Unicode
+
 ### Planned
-- Interactive REPL with fuzzy suggestions and colored output (Phase 4)
 - User-defined units, physical constants, math expressions (Phase 5)
+- GNU `definitions.units` parser with tiered loading (Phase 5)
+- Configurable color themes with hex/truecolor support
 
 ## Contributing & Setup
 

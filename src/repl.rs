@@ -176,8 +176,8 @@ impl Highlighter for UnitsHelper {
                 result.push_str(&t.num(token, true));
             } else if token == "?" || token == "quit" || token == "exit" {
                 result.push_str(token);
-            } else if self.db.lookup(token).is_some() {
-                result.push_str(&t.unit(token, true));
+            } else if let Some(u) = self.db.lookup(token) {
+                result.push_str(&t.unit_text(token, &u, true));
             } else {
                 result.push_str(token);
             }
@@ -238,8 +238,8 @@ pub fn run(opts: &FormatOptions) {
         "{} {} — interactive mode. Type {} or {} to exit.",
         t.kw("runits", c),
         env!("CARGO_PKG_VERSION"),
-        t.unit("quit", c),
-        t.unit("Ctrl-D", c),
+        t.kw("quit", c),
+        t.kw("Ctrl-D", c),
     );
     println!(
         "Syntax: {} {} {}",
@@ -380,9 +380,10 @@ fn handle_quantity_help_from_qty(
     if compatible.is_empty() {
         println!("  {}", t.dim("No other compatible units in database.", c));
     } else {
+        let style = t.unit_style(&qty.unit);
         let list = compatible
             .iter()
-            .map(|u| t.unit(u, c))
+            .map(|u| t.paint(u, style, c))
             .collect::<Vec<_>>()
             .join(", ");
         println!("  Compatible: {}", list);

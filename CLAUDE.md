@@ -62,18 +62,22 @@ runits/
 │   └── cli_tests.rs       # assert_cmd integration tests
 └── src/
     ├── lib.rs             # crate root, re-exports, embeds roadmap.md into rustdoc
-    ├── main.rs            # CLI entry point
-    ├── cli.rs             # clap-derived Cli struct
-    ├── parser.rs          # pest parser + parse-tree walker
-    ├── database.rs        # UnitDatabase with alias lookup, SI/binary prefixes
-    ├── error.rs           # unified error enum via thiserror
+    ├── main.rs            # CLI entry point + dispatch (one-shot/REPL/batch/completions)
+    ├── cli.rs             # clap-derived Cli struct + Commands subcommand enum
+    ├── parser.rs          # pest parser + compound-unit expression tree walker
+    ├── database.rs        # UnitDatabase with alias lookup, SI/binary prefixes, fuzzy suggest
+    ├── error.rs           # unified error enum via thiserror (with fuzzy suggestions)
     ├── annotations.rs     # dimension-signature → physical-quantity name registry
+    ├── convert.rs         # ConversionResult + run_conversion() (shared by CLI/REPL/batch)
+    ├── format.rs          # Theme (dimension-based colors), FormatOptions, format_result/unit_info
+    ├── repl.rs            # REPL loop, ? help, hinter, highlighter, tab-completion
+    ├── config.rs          # TOML config loading (~/.config/runits/config.toml)
     ├── grammar.pest       # pest grammar for quantity + compound-unit parsing
     └── units/
         ├── mod.rs         # module re-exports
-        ├── dimension.rs   # Dimension enum + DimensionMap
-        ├── unit.rs        # Unit struct, ConversionKind (linear/affine), arithmetic
-        └── quantity.rs    # Quantity struct, conversion, errors
+        ├── dimension.rs   # Dimension enum + DimensionMap + analysis_symbol/base_symbol
+        ├── unit.rs        # Unit struct, ConversionKind, prefixable, Mul/Div, render_dimensions
+        └── quantity.rs    # Quantity struct, conversion, format_value
 ```
 
 ---
@@ -82,7 +86,7 @@ runits/
 
 - **Language:** Rust (edition 2024)
 - **Toolchain:** rustc 1.94.1, cargo 1.94.1 (as of 2026-03)
-- **Dependencies (current):** `clap` (derive), `pest` + `pest_derive`, `thiserror`; dev: `assert_cmd`, `predicates`. Phase 4 adds REPL / config / fuzzy-match crates — see table below.
+- **Dependencies (current):** `clap` (derive) + `clap_complete`, `pest` + `pest_derive`, `thiserror`, `owo-colors`, `rustyline`, `strsim`, `serde` (derive) + `toml`; dev: `assert_cmd`, `predicates`.
 
 ## Build & Development Commands
 
@@ -102,19 +106,17 @@ cargo clippy -- -D warnings          # lint, warnings-as-errors
 
 ## Dependencies by Phase
 
-Phases 2–3 entries below are **installed now**; later-phase entries will be added via `cargo add` as each phase begins. (Phase 3 required no new crate dependencies.)
-
 | Crate | Phase | Purpose | Status |
 |---|---|---|---|
 | `clap` (derive) | 2 | CLI argument parsing | ✅ |
 | `thiserror` | 2 | error derive macros | ✅ |
 | `pest` + `pest_derive` | 2 | parser generator / grammar | ✅ |
 | `assert_cmd` + `predicates` | 2 (dev) | CLI integration tests | ✅ |
-| `rustyline` | 4 | interactive REPL | ⏳ |
-| `strsim` | 4 | fuzzy unit-name suggestions | ⏳ |
-| `owo-colors` | 4 | colored output | ⏳ |
-| `clap_complete` + `clap_mangen` | 4 | shell completions + man pages | ⏳ |
-| `serde` + `toml` | 4 | TOML config file | ⏳ |
+| `rustyline` | 4 | interactive REPL + hinter/highlighter/completer | ✅ |
+| `strsim` | 4 | fuzzy unit-name suggestions | ✅ |
+| `owo-colors` | 4 | dimension-based colored output (Flexoki-inspired) | ✅ |
+| `clap_complete` | 4 | shell completions (bash/zsh/fish) | ✅ |
+| `serde` + `toml` | 4 | TOML config file | ✅ |
 
 Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 
