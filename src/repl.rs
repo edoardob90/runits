@@ -40,9 +40,15 @@ impl Completer for UnitsHelper {
             .map(|i| i + 1)
             .unwrap_or(0);
 
-        // Skip if we're on a `?` prefix or the partial is empty.
         let partial = &line[word_start..pos];
-        if partial.is_empty() || partial == "?" {
+
+        // Dimension-aware: if we're past a delimiter (-> / to / in / as),
+        // try to parse the source side and filter to compatible units only.
+        let compatible_filter = self.source_dimensions(line);
+
+        // Empty partial: show all compatible units if we have a dimension filter
+        // (user typed "10 m to " and wants to see options). Otherwise skip.
+        if (partial.is_empty() || partial == "?") && compatible_filter.is_none() {
             return Ok((pos, vec![]));
         }
 
@@ -55,6 +61,13 @@ impl Completer for UnitsHelper {
             .db
             .unit_names()
             .filter(|name| name.starts_with(partial))
+            .filter(|name| {
+                // If we know the source dimensions, only suggest compatible units.
+                match &compatible_filter {
+                    Some(dims) => self.db.lookup(name).is_some_and(|u| u.dimensions == *dims),
+                    None => true, // No source context — suggest all.
+                }
+            })
             .map(|name| Pair {
                 display: name.to_string(),
                 replacement: name.to_string(),
@@ -64,6 +77,29 @@ impl Completer for UnitsHelper {
         matches.truncate(20);
 
         Ok((word_start, matches))
+    }
+}
+
+impl UnitsHelper {
+    /// If the cursor is past a conversion delimiter, try to parse the source
+    /// side and return its dimensions for filtering completions.
+    fn source_dimensions(&self, line: &str) -> Option<crate::units::dimension::DimensionMap> {
+        // Try each delimiter; use the first one found.
+        for delim in [" -> ", " to ", " in ", " as "] {
+            if let Some(delim_pos) = line.find(delim) {
+                let source = line[..delim_pos].trim();
+                if source.is_empty() {
+                    return None;
+                }
+                // Try parsing the source as a quantity to extract dimensions.
+                if let Ok(qty) = parser::parse_quantity(source, self.db) {
+                    return Some(qty.unit.dimensions.clone());
+                }
+                // Source didn't parse (incomplete/invalid) — no filter.
+                return None;
+            }
+        }
+        None // No delimiter found — source side, no filter.
     }
 }
 

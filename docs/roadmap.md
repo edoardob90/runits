@@ -123,6 +123,7 @@ Architecturally interesting work with narrower user value — tackle when motiva
 
 - **Multiple unit systems** (CGS, Imperial, Natural). Great trait-object learning (`Box<dyn UnitSystem>`, strategy pattern), but the value for most users is narrow — compound units with prefixes already cover practical needs.
 - **Currency conversion** with live exchange-rate API (e.g., exchangerate.host). Requires HTTP client + cache layer.
+- **TUI mode** (`runits --tui`) via `ratatui` — a standalone full-screen interactive mode, separate from the REPL. Dropdown fuzzy picker, side panel with unit info, dimension-colored suggestions. This is *not* a replacement for the REPL — it's an alternative interface. The REPL uses rustyline with progressively enhanced completion (Fish-style); the TUI is a distinct experience.
 - **WASM target** with a small web playground.
 - **Quality tooling**: criterion benchmarks, proptest round-trip tests, cargo-fuzz on the parser, cargo-dist release packaging, Homebrew tap.
 
