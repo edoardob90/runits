@@ -47,7 +47,12 @@ Every plan Claude writes (plan mode or otherwise) **must** include a **User Veri
 
 ## Project Structure
 
-Module-specific instructions live in `src/database/CLAUDE.md`, `src/repl/CLAUDE.md`, and `src/units/CLAUDE.md`. These are automatically loaded when working in those directories.
+Module-specific instructions:
+- [Database](src/database/CLAUDE.md)
+- [REPL](src/repl/CLAUDE.md)
+- [Units](src/units/CLAUDE.md)
+ 
+Load these instructions automatically when working in those directories.
 
 ```
 runits/
