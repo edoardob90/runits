@@ -1,6 +1,8 @@
 //! Rustyline helper: tab-completion, inline hints, syntax highlighting.
 
+use crate::annotations;
 use crate::database::UnitDatabase;
+use crate::database::constants;
 use crate::parser;
 use crate::theme::Theme;
 use rustyline::completion::{Completer, Pair};
@@ -47,6 +49,36 @@ impl Completer for UnitsHelper {
             return Ok((pos, vec![]));
         }
 
+        // REPL commands (only at the start of the line).
+        if word_start == 0 {
+            let commands = ["const", "search", "info", "quit", "exit"];
+            let cmd_matches: Vec<Pair> = commands
+                .iter()
+                .filter(|cmd| cmd.starts_with(partial) && **cmd != partial)
+                .map(|cmd| Pair {
+                    display: cmd.to_string(),
+                    replacement: cmd.to_string(),
+                })
+                .collect();
+            if !cmd_matches.is_empty() {
+                return Ok((word_start, cmd_matches));
+            }
+        }
+
+        // After "search ", suggest quantity names (case-insensitive prefix).
+        if line[..word_start].trim_end().eq_ignore_ascii_case("search") {
+            let partial_lower = partial.to_lowercase();
+            let qty_matches: Vec<Pair> = annotations::all_quantity_names()
+                .into_iter()
+                .filter(|name| name.to_lowercase().starts_with(&partial_lower))
+                .map(|name| Pair {
+                    display: name.to_string(),
+                    replacement: name.to_string(),
+                })
+                .collect();
+            return Ok((word_start, qty_matches));
+        }
+
         let mut matches: Vec<Pair> = self
             .db
             .unit_names()
@@ -63,7 +95,23 @@ impl Completer for UnitsHelper {
                 replacement: name.to_string(),
             })
             .collect();
+
+        // Also suggest constant names (only when no dimension filter is active,
+        // since constants are values, not conversion targets).
+        if compatible_filter.is_none() {
+            let const_db = constants::global();
+            let const_matches = const_db
+                .constant_names()
+                .filter(|name| name.starts_with(partial))
+                .map(|name| Pair {
+                    display: name.to_string(),
+                    replacement: name.to_string(),
+                });
+            matches.extend(const_matches);
+        }
+
         matches.sort_by(|a, b| a.display.cmp(&b.display));
+        matches.dedup_by(|a, b| a.display == b.display);
         matches.truncate(20);
 
         Ok((word_start, matches))
@@ -113,18 +161,47 @@ impl Hinter for UnitsHelper {
             return None;
         }
 
+        // After "search ", hint quantity names (case-insensitive prefix).
+        if line[..word_start].trim_end().eq_ignore_ascii_case("search") {
+            let partial_lower = partial.to_lowercase();
+            return annotations::all_quantity_names()
+                .into_iter()
+                .filter(|name| name.to_lowercase().starts_with(&partial_lower))
+                .min_by_key(|name| name.len())
+                .map(|name| name[partial.len()..].to_string());
+        }
+
         let dims = self.source_dimensions(line);
 
-        // Find shortest prefix match — most likely intended unit.
-        self.db
+        // Find shortest prefix match — most likely intended unit or constant.
+        let unit_match = self
+            .db
             .unit_names()
             .filter(|name| name.starts_with(partial))
             .filter(|name| match &dims {
                 Some(d) => self.db.lookup(name).is_some_and(|u| u.dimensions == *d),
                 None => true,
             })
-            .min_by_key(|name| name.len())
-            .map(|name| name[partial.len()..].to_string())
+            .min_by_key(|name| name.len());
+
+        let const_match = if dims.is_none() {
+            constants::global()
+                .constant_names()
+                .filter(|name| name.starts_with(partial))
+                .min_by_key(|name| name.len())
+        } else {
+            None
+        };
+
+        // Prefer the shorter match overall.
+        match (unit_match, const_match) {
+            (Some(u), Some(c)) => {
+                let best = if u.len() <= c.len() { u } else { c };
+                Some(best[partial.len()..].to_string())
+            }
+            (Some(m), None) | (None, Some(m)) => Some(m[partial.len()..].to_string()),
+            (None, None) => None,
+        }
     }
 }
 
@@ -160,7 +237,7 @@ impl Highlighter for UnitsHelper {
             }
             let token = &line[start..i];
 
-            if token == "to" || token == "in" || token == "as" {
+            if matches!(token, "to" | "in" | "as" | "const" | "search" | "info") {
                 result.push_str(&t.kw(token));
             } else if token.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {
                 result.push_str(&t.num(token));
@@ -168,6 +245,8 @@ impl Highlighter for UnitsHelper {
                 result.push_str(token);
             } else if let Some(u) = self.db.lookup(token) {
                 result.push_str(&t.unit_text(token, &u));
+            } else if constants::global().lookup(token).is_some() {
+                result.push_str(&t.cst(token));
             } else {
                 result.push_str(token);
             }

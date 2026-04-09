@@ -261,6 +261,104 @@ pub fn format_unit_info(
 }
 
 // ---------------------------------------------------------------------------
+// Constant info formatting (? help for constants)
+// ---------------------------------------------------------------------------
+
+/// Format constant info for the `?` help query in the REPL.
+pub fn format_constant_info(
+    constant: &crate::database::constants::Constant,
+    opts: &FormatOptions,
+) -> String {
+    let t = Theme::new(opts.color);
+    let mut lines = Vec::new();
+
+    // Header: name — styled as a constant (italic purple)
+    lines.push(t.cst(constant.name));
+
+    // Description
+    lines.push(format!(
+        "  {} {}",
+        t.dim("Description:"),
+        constant.description
+    ));
+
+    // Value + unit
+    let val = format_value(constant.value, 10, false);
+    let unit_name = if opts.unicode {
+        unicode_unit_name(&constant.unit.name)
+    } else {
+        constant.unit.name.clone()
+    };
+    lines.push(format!(
+        "  {} {} {}",
+        t.dim("Value:"),
+        t.num(&val),
+        t.unit_text(&unit_name, &constant.unit),
+    ));
+
+    // Dimensions
+    let dims_colored = colored_dimensions(
+        &constant.unit.dimensions,
+        Dimension::analysis_symbol,
+        opts.unicode,
+        &t,
+    );
+    if constant.unit.dimensions.is_empty() {
+        lines.push(format!("  {} (dimensionless)", t.dim("Dimensions:")));
+    } else {
+        lines.push(format!("  {} {}", t.dim("Dimensions:"), dims_colored));
+    }
+
+    lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Unit list formatting (search / list-units)
+// ---------------------------------------------------------------------------
+
+/// Format a list of unit names for a given quantity, with dimension colors.
+///
+/// `dims` colors both the quantity header and unit names by dimension.
+/// Pass `None` for uncolored output.
+pub fn format_unit_list(
+    quantity_name: &str,
+    unit_names: &[String],
+    dims: Option<&crate::units::dimension::DimensionMap>,
+    opts: &FormatOptions,
+) -> String {
+    let t = Theme::new(opts.color);
+    let mut lines = Vec::new();
+
+    // Header: quantity name colored by its dimensions.
+    let header = match dims {
+        Some(d) => t.paint(quantity_name, t.dims_style(d)),
+        None => quantity_name.to_string(),
+    };
+    lines.push(format!("{} ({})", header, unit_names.len()));
+
+    if unit_names.is_empty() {
+        lines.push(format!("  {}", t.dim("(no units in database)")));
+    } else {
+        let styled: Vec<String> = unit_names.iter().map(|n| n.to_string()).collect();
+        lines.push(format!("  {}", styled.join(", ")));
+    }
+
+    lines.join("\n")
+}
+
+/// Format all units grouped by physical quantity.
+///
+/// Used by `list-units` with no filter. Groups units by their annotation,
+/// with an "Other" group for unannotated units.
+pub fn format_all_units_grouped(groups: &[(String, Vec<String>)], opts: &FormatOptions) -> String {
+    let mut lines = Vec::new();
+    for (qty_name, unit_names) in groups {
+        lines.push(format_unit_list(qty_name, unit_names, None, opts));
+    }
+    lines.join("\n\n")
+}
+
+// ---------------------------------------------------------------------------
 // Unicode rendering
 // ---------------------------------------------------------------------------
 

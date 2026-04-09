@@ -62,4 +62,10 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// List known units, optionally filtered by physical quantity
+    #[command(name = "list-units")]
+    ListUnits {
+        /// Filter by quantity name (e.g., "velocity", "force", "length")
+        filter: Option<String>,
+    },
 }

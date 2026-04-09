@@ -7,7 +7,8 @@
 
 mod helper;
 
-use crate::annotations::quantity_name;
+use crate::annotations::{self, quantity_name};
+use crate::database::constants;
 use crate::database::{self, UnitDatabase};
 use crate::format::{self, FormatOptions};
 use crate::parser;
@@ -65,6 +66,28 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
                 if line == "info" {
                     print_info(&t, db);
                     continue;
+                }
+                if let Some(name) = line
+                    .strip_prefix("const ")
+                    .or_else(|| line.strip_prefix("const\t"))
+                {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        handle_const_command(name, opts);
+                        let _ = rl.add_history_entry(line);
+                        continue;
+                    }
+                }
+                if let Some(query) = line
+                    .strip_prefix("search ")
+                    .or_else(|| line.strip_prefix("search\t"))
+                {
+                    let query = query.trim();
+                    if !query.is_empty() {
+                        handle_search_command(query, db, opts);
+                        let _ = rl.add_history_entry(line);
+                        continue;
+                    }
                 }
                 let _ = rl.add_history_entry(line);
 
@@ -178,7 +201,20 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
         } else {
             match convert::run_conversion(source, target, db) {
                 Ok(result) => println!("{}", format::format_result(&result, opts)),
-                Err(e) => print_error(&e, opts),
+                Err(_) => {
+                    // Fallback: try source as a constant name (e.g., "c_0 to mph").
+                    if let Some(result) = try_constant_conversion(source, target, db) {
+                        match result {
+                            Ok(r) => println!("{}", format::format_result(&r, opts)),
+                            Err(e) => print_error(&e, opts),
+                        }
+                    } else {
+                        // Re-run to get the original error message.
+                        if let Err(e) = convert::run_conversion(source, target, db) {
+                            print_error(&e, opts);
+                        }
+                    }
+                }
             }
         }
         return;
@@ -198,6 +234,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
     }
 
     // 3. No delimiter, no ? — try parsing as a bare quantity.
+    //    Falls back to constants DB if quantity parsing fails.
     match parser::parse_quantity(line, db) {
         Ok(qty) => {
             let annotation = quantity_name(&qty.unit.dimensions);
@@ -207,7 +244,21 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
             };
             println!("{}", format::format_result(&result, opts));
         }
-        Err(e) => print_error(&e, opts),
+        Err(e) => {
+            // Before reporting error, check if the whole input is a constant name.
+            let const_db = constants::global();
+            if let Some(c) = const_db.lookup(line) {
+                let qty = crate::units::Quantity::new(c.value, c.unit.clone());
+                let annotation = quantity_name(&qty.unit.dimensions);
+                let result = convert::ConversionResult {
+                    result: qty,
+                    annotation,
+                };
+                println!("{}", format::format_result(&result, opts));
+            } else {
+                print_error(&e, opts);
+            }
+        }
     }
 }
 
@@ -229,6 +280,8 @@ fn strip_question_mark(line: &str) -> Option<&str> {
 }
 
 /// Handle `? meter` or `meter ?` — show unit info + compatible units.
+///
+/// Falls back to the constants database if the query doesn't match any unit.
 fn handle_unit_help(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
     match parser::parse_unit_name(query, db) {
         Ok(unit) => {
@@ -240,7 +293,15 @@ fn handle_unit_help(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
                 format::format_unit_info(&unit, &aliases, &compatible, annotation, opts)
             );
         }
-        Err(e) => print_error(&e, opts),
+        Err(e) => {
+            // Fall back to constants database before reporting error.
+            let const_db = constants::global();
+            if let Some(c) = const_db.lookup(query) {
+                println!("{}", format::format_constant_info(c, opts));
+            } else {
+                print_error(&e, opts);
+            }
+        }
     }
 }
 
@@ -277,6 +338,112 @@ fn handle_quantity_help_from_qty(
             .collect::<Vec<_>>()
             .join(", ");
         println!("  Compatible: {}", list);
+    }
+}
+
+/// Try interpreting `source` as a constant name and converting to `target`.
+///
+/// Returns `None` if source is not a known constant, `Some(result)` otherwise.
+fn try_constant_conversion(
+    source: &str,
+    target: &str,
+    db: &UnitDatabase,
+) -> Option<Result<convert::ConversionResult, crate::error::RUnitsError>> {
+    let const_db = constants::global();
+    let c = const_db.lookup(source.trim())?;
+    let qty = crate::units::Quantity::new(c.value, c.unit.clone());
+    let target_unit = match parser::parse_unit_name(target, db) {
+        Ok(u) => u,
+        Err(e) => return Some(Err(e)),
+    };
+    let result = match qty.convert_to(&target_unit) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+    };
+    let annotation = quantity_name(&result.unit.dimensions);
+    Some(Ok(convert::ConversionResult { result, annotation }))
+}
+
+/// Handle `search <query>` — find conformable units for a quantity name or unit.
+///
+/// Accepts either a quantity name ("velocity", "force") or a unit name
+/// ("meter", "N"). For quantity names, looks up the dimension signature
+/// via the annotations registry. For unit names, uses the unit's dimensions.
+fn handle_search_command(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
+    let t = Theme::new(opts.color);
+
+    // Try exact quantity name match (case-insensitive).
+    if let Some(dims) = annotations::dimensions_for_name(query) {
+        print_search_results(query, &dims, db, opts);
+        return;
+    }
+
+    // Try case-insensitive prefix match on quantity names (e.g., "vel" → "Velocity").
+    let query_lower = query.to_lowercase();
+    let prefix_match = annotations::all_quantity_names()
+        .into_iter()
+        .find(|name| name.to_lowercase().starts_with(&query_lower));
+    if let Some(matched_name) = prefix_match
+        && let Some(dims) = annotations::dimensions_for_name(matched_name)
+    {
+        print_search_results(matched_name, &dims, db, opts);
+        return;
+    }
+
+    // Try as unit name (e.g., "meter", "N").
+    if let Ok(unit) = parser::parse_unit_name(query, db) {
+        let compat = db.compatible_units(&unit);
+        let qty_name = quantity_name(&unit.dimensions).unwrap_or("(unnamed)");
+        println!(
+            "{}",
+            format::format_unit_list(qty_name, &compat, Some(&unit.dimensions), opts)
+        );
+        return;
+    }
+
+    // Nothing matched — show colored quantity list.
+    eprintln!(
+        "{}",
+        t.err(&format!("Error: unknown quantity or unit: '{query}'"))
+    );
+    let names = annotations::all_quantity_names();
+    let colored_names: Vec<String> = names
+        .iter()
+        .map(|name| {
+            annotations::dimensions_for_name(name)
+                .map(|d| t.paint(name, t.dims_style(&d)))
+                .unwrap_or_else(|| name.to_string())
+        })
+        .collect();
+    eprintln!("  Known quantities: {}", colored_names.join(", "));
+}
+
+/// Print search results for a quantity name with known dimensions.
+fn print_search_results(
+    query: &str,
+    dims: &crate::units::dimension::DimensionMap,
+    db: &UnitDatabase,
+    opts: &FormatOptions,
+) {
+    let qty_name = quantity_name(dims).unwrap_or(query);
+    let dims_vec: Vec<_> = dims.iter().map(|(d, &e)| (d.clone(), e)).collect();
+    let synthetic = crate::units::Unit::new("_query", 1.0, &dims_vec);
+    let compat = db.compatible_units(&synthetic);
+    println!(
+        "{}",
+        format::format_unit_list(qty_name, &compat, Some(dims), opts)
+    );
+}
+
+/// Handle `const <name>` — echo a physical constant as a quantity.
+fn handle_const_command(name: &str, opts: &FormatOptions) {
+    let const_db = constants::global();
+    match const_db.lookup(name) {
+        Some(c) => println!("{}", format::format_constant_info(c, opts)),
+        None => {
+            let t = Theme::new(opts.color);
+            eprintln!("{}", t.err(&format!("Error: unknown constant: '{name}'")));
+        }
     }
 }
 

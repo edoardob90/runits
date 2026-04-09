@@ -9,6 +9,7 @@
 //! meter) and binary prefixes for information units. Fuzzy suggestions via
 //! Jaro-Winkler scoring help with typos.
 
+pub mod constants;
 mod seed;
 
 use crate::units::Unit;

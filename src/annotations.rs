@@ -23,6 +23,74 @@ pub fn quantity_name_count() -> usize {
     registry().len()
 }
 
+/// Reverse lookup: find the dimension signature for a named quantity.
+///
+/// Case-insensitive. Returns `None` if the name doesn't match any known quantity.
+/// ```
+/// use runits::annotations::dimensions_for_name;
+/// use runits::units::dimension::Dimension;
+///
+/// let dims = dimensions_for_name("velocity").unwrap();
+/// assert_eq!(dims.get(&Dimension::Length), Some(&1));
+/// assert_eq!(dims.get(&Dimension::Time), Some(&-1));
+/// ```
+pub fn dimensions_for_name(name: &str) -> Option<DimensionMap> {
+    let name_lower = name.to_lowercase();
+    for (dim_key_str, &qty_name) in registry() {
+        if qty_name.to_lowercase() == name_lower {
+            return Some(parse_dim_key(dim_key_str));
+        }
+    }
+    None
+}
+
+/// Return all registered quantity names, sorted alphabetically.
+pub fn all_quantity_names() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = registry().values().copied().collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Parse a canonical dim_key string back into a DimensionMap.
+///
+/// Input format: "L1M1T-2" → {Length: 1, Mass: 1, Time: -2}
+fn parse_dim_key(key: &str) -> DimensionMap {
+    let mut map = DimensionMap::new();
+    let mut chars = key.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        let dim = match c {
+            'L' => Dimension::Length,
+            'M' => Dimension::Mass,
+            'T' => Dimension::Time,
+            'I' => Dimension::Current,
+            'J' => Dimension::LuminousIntensity,
+            'N' => Dimension::AmountOfSubstance,
+            'A' => Dimension::Angle,
+            'B' => Dimension::Information,
+            '$' => Dimension::Currency,
+            'Θ' => Dimension::Temperature,
+            _ => continue,
+        };
+
+        // Parse the exponent digits (including leading minus).
+        let mut exp_str = String::new();
+        while let Some(&next) = chars.peek() {
+            if next == '-' || next.is_ascii_digit() {
+                exp_str.push(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if let Ok(exp) = exp_str.parse::<i8>() {
+            map.insert(dim, exp);
+        }
+    }
+    map
+}
+
 /// Canonical string key for a DimensionMap: sorted dimension abbreviations
 /// with exponents, e.g. "L1M1T-2" for force (kg*m/s^2).
 fn dim_key(dims: &DimensionMap) -> String {
@@ -295,5 +363,51 @@ mod tests {
     fn frequency_annotation() {
         let d = dims(&[(Dimension::Time, -1)]);
         assert_eq!(quantity_name(&d), Some("Frequency"));
+    }
+
+    // ---- Reverse lookup tests ----
+
+    #[test]
+    fn dimensions_for_velocity() {
+        let d = dimensions_for_name("velocity").unwrap();
+        assert_eq!(d.get(&Dimension::Length), Some(&1));
+        assert_eq!(d.get(&Dimension::Time), Some(&-1));
+    }
+
+    #[test]
+    fn dimensions_for_name_case_insensitive() {
+        assert!(dimensions_for_name("Velocity").is_some());
+        assert!(dimensions_for_name("VELOCITY").is_some());
+        assert!(dimensions_for_name("velocity").is_some());
+    }
+
+    #[test]
+    fn dimensions_for_unknown_returns_none() {
+        assert!(dimensions_for_name("nonexistent").is_none());
+    }
+
+    #[test]
+    fn all_quantity_names_contains_expected() {
+        let names = all_quantity_names();
+        assert!(names.contains(&"Velocity"));
+        assert!(names.contains(&"Force"));
+        assert!(names.contains(&"Length"));
+        assert!(names.contains(&"Energy"));
+    }
+
+    #[test]
+    fn all_quantity_names_sorted_and_deduped() {
+        let names = all_quantity_names();
+        let mut sorted = names.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn roundtrip_dim_key_parse() {
+        // Verify that dimensions_for_name gives back what quantity_name expects.
+        let d = dimensions_for_name("force").unwrap();
+        assert_eq!(quantity_name(&d), Some("Force"));
     }
 }

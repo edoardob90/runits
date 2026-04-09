@@ -33,6 +33,7 @@ pub struct Theme {
     // Utility styles
     pub number: Style,
     pub keyword: Style,
+    pub constant: Style,
     pub dimmed: Style,
     pub error: Style,
 }
@@ -55,6 +56,7 @@ impl Theme {
             compound: Style::new().bright_white().bold(),
             number: Style::new().yellow(),
             keyword: Style::new().dimmed().bold(),
+            constant: Style::new().truecolor(175, 135, 255).italic(), // Flexoki purple, italic
             dimmed: Style::new().dimmed(),
             error: Style::new().red(),
         }
@@ -85,17 +87,21 @@ impl Theme {
         }
     }
 
-    /// Style for a unit based on its dimensions.
+    /// Style for a dimension signature.
     /// Single-dimension → that dimension's color.
-    /// Multi-dimension (compound) → compound style.
-    /// Dimensionless → compound style.
-    pub fn unit_style(&self, unit: &crate::units::Unit) -> &Style {
-        if unit.dimensions.len() == 1 {
-            let (dim, _) = unit.dimensions.iter().next().unwrap();
+    /// Multi-dimension (compound) or dimensionless → compound style.
+    pub fn dims_style(&self, dims: &crate::units::dimension::DimensionMap) -> &Style {
+        if dims.len() == 1 {
+            let (dim, _) = dims.iter().next().unwrap();
             self.dimension_style(dim)
         } else {
             &self.compound
         }
+    }
+
+    /// Style for a unit based on its dimensions. Delegates to [`dims_style`].
+    pub fn unit_style(&self, unit: &crate::units::Unit) -> &Style {
+        self.dims_style(&unit.dimensions)
     }
 
     // Convenience methods.
@@ -110,6 +116,9 @@ impl Theme {
     }
     pub fn lbl(&self, text: &str) -> String {
         self.paint(text, &self.compound) // labels use compound/bold style
+    }
+    pub fn cst(&self, text: &str) -> String {
+        self.paint(text, &self.constant)
     }
     pub fn dim(&self, text: &str) -> String {
         self.paint(text, &self.dimmed)

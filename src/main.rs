@@ -33,6 +33,12 @@ fn run() -> Result<(), RUnitsError> {
                 generate_completions(*shell);
                 Ok(())
             }
+            Commands::ListUnits { filter } => {
+                let config = Config::load();
+                let opts = resolve_opts(&cli, &config, false);
+                list_units(filter.as_deref(), &opts);
+                Ok(())
+            }
         };
     }
 
@@ -118,6 +124,106 @@ fn run_batch(cli: &Cli, config: &Config) -> Result<(), RUnitsError> {
         }
     }
     Ok(())
+}
+
+fn list_units(filter: Option<&str>, opts: &FormatOptions) {
+    let db = database::global();
+
+    if let Some(query) = filter {
+        // Filtered: try as quantity name, then as unit name.
+        if let Some(dims) = runits::annotations::dimensions_for_name(query) {
+            let qty_name = runits::annotations::quantity_name(&dims).unwrap_or(query);
+            let dims_vec: Vec<_> = dims.into_iter().collect();
+            let synthetic = runits::Unit::new("_query", 1.0, &dims_vec);
+            let compat = db.compatible_units(&synthetic);
+            if opts.json {
+                print_json_unit_list(qty_name, &compat);
+            } else {
+                println!(
+                    "{}",
+                    format::format_unit_list(qty_name, &compat, Some(&synthetic.dimensions), opts)
+                );
+            }
+        } else if let Ok(unit) = runits::parser::parse_unit_name(query, db) {
+            let qty_name =
+                runits::annotations::quantity_name(&unit.dimensions).unwrap_or("(unnamed)");
+            let compat = db.compatible_units(&unit);
+            if opts.json {
+                print_json_unit_list(qty_name, &compat);
+            } else {
+                println!(
+                    "{}",
+                    format::format_unit_list(qty_name, &compat, Some(&unit.dimensions), opts)
+                );
+            }
+        } else {
+            eprintln!("Error: unknown quantity or unit: '{query}'");
+            let names = runits::annotations::all_quantity_names();
+            eprintln!("  Known quantities: {}", names.join(", "));
+            std::process::exit(1);
+        }
+    } else {
+        // Unfiltered: show all units grouped by quantity.
+        let groups = build_unit_groups(db);
+        if opts.json {
+            print_json_all_groups(&groups);
+        } else {
+            println!("{}", format::format_all_units_grouped(&groups, opts));
+        }
+    }
+}
+
+/// Build groups of (quantity_name, [unit_names]) from the database.
+fn build_unit_groups(db: &runits::database::UnitDatabase) -> Vec<(String, Vec<String>)> {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let mut groups: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+
+    // Collect unique canonical names with their annotations.
+    let mut seen = std::collections::HashSet::new();
+    for name in db.unit_names() {
+        if let Some(unit) = db.lookup(name) {
+            if !seen.insert(unit.name.clone()) {
+                continue;
+            }
+            let qty = runits::annotations::quantity_name(&unit.dimensions)
+                .unwrap_or("Other")
+                .to_string();
+            groups.entry(qty).or_default().insert(unit.name.clone());
+        }
+    }
+
+    groups
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().collect()))
+        .collect()
+}
+
+fn print_json_unit_list(quantity: &str, units: &[String]) {
+    println!(
+        "{{\"quantity\":\"{}\",\"units\":[{}]}}",
+        quantity,
+        units
+            .iter()
+            .map(|u| format!("\"{}\"", u))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+}
+
+fn print_json_all_groups(groups: &[(String, Vec<String>)]) {
+    let entries: Vec<String> = groups
+        .iter()
+        .map(|(qty, units)| {
+            let units_json = units
+                .iter()
+                .map(|u| format!("\"{}\"", u))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{\"quantity\":\"{}\",\"units\":[{}]}}", qty, units_json)
+        })
+        .collect();
+    println!("[{}]", entries.join(","));
 }
 
 fn generate_completions(shell: clap_complete::Shell) {
