@@ -2,7 +2,8 @@
 //!
 //! Each base dimension has its own color. Units inherit color from their
 //! dimension (single-dimension) or use the compound style (multi-dimension).
-//! Flexoki-inspired ANSI defaults. FUTURE: loadable from config.toml.
+//! Flexoki-inspired (https://github.com/kepano/flexoki) ANSI defaults.
+//! FUTURE: loadable from config.toml.
 
 use crate::units::dimension::Dimension;
 use owo_colors::Style;
@@ -14,7 +15,7 @@ use owo_colors::Style;
 /// controls whether styles are actually applied (respects `NO_COLOR`, piping).
 #[derive(Debug, Clone)]
 pub struct Theme {
-    // Color toggle
+    // Color mode toggle
     pub color: bool,
     // Per-dimension colors
     pub length: Style,
