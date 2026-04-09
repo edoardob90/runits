@@ -50,6 +50,7 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
 
     let t = Theme::new(opts.color);
     let db = database::global();
+    let mut last_conversion: Option<convert::ConversionResult> = None;
 
     print_banner(banner, &t, db);
 
@@ -71,6 +72,22 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
                     print_help(&t);
                     continue;
                 }
+                if line == "explain" {
+                    let _ = rl.add_history_entry(line);
+                    if let Some(ref conv) = last_conversion {
+                        let explain_opts = FormatOptions {
+                            explain: true,
+                            ..opts.clone()
+                        };
+                        println!("{}", format::format_explain(conv, &explain_opts));
+                    } else {
+                        eprintln!(
+                            "{}",
+                            t.err("No conversion to explain. Run a conversion first.")
+                        );
+                    }
+                    continue;
+                }
                 if let Some(name) = strip_command_arg(line, "const") {
                     handle_const_command(name, opts);
                     let _ = rl.add_history_entry(line);
@@ -89,7 +106,9 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
                 }
                 let _ = rl.add_history_entry(line);
 
-                handle_input(line, db, opts);
+                if let Some(conv) = handle_input(line, db, opts) {
+                    last_conversion = Some(conv);
+                }
             }
             Err(ReadlineError::Interrupted) => continue, // Ctrl-C: clear line
             Err(ReadlineError::Eof) => break,            // Ctrl-D: exit
@@ -191,6 +210,11 @@ fn print_help(t: &Theme) {
             format!("{} {}", t.kw("const"), t.dim("<name>")),
             "show constant value",
         ),
+        (
+            "explain",
+            t.kw("explain"),
+            "show last conversion step-by-step",
+        ),
         ("info", t.kw("info"), "database & config info"),
         ("help", t.kw("help"), "this help"),
         ("quit", t.kw("quit"), "exit"),
@@ -246,31 +270,46 @@ fn print_info(t: &Theme, db: &UnitDatabase) {
     );
 }
 
-fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
+/// Dispatch a REPL line: conversion, help query, or bare quantity.
+///
+/// Returns `Some(result)` for successful conversions (used by `explain`
+/// to store the last conversion). Returns `None` for help queries,
+/// bare echoes, and errors.
+fn handle_input(
+    line: &str,
+    db: &UnitDatabase,
+    opts: &FormatOptions,
+) -> Option<convert::ConversionResult> {
     // 1. Delimiter-based input (check first, so "100 km/h -> ?" is caught).
     if let Some((source, target)) = parse_repl_line(line) {
         if target == "?" {
             handle_quantity_help(source, db, opts);
-        } else {
-            match convert::run_conversion(source, target, db) {
-                Ok(result) => println!("{}", format::format_result(&result, opts)),
-                Err(_) => {
-                    // Fallback: try source as a constant name (e.g., "c_0 to mph").
-                    if let Some(result) = try_constant_conversion(source, target, db) {
-                        match result {
-                            Ok(r) => println!("{}", format::format_result(&r, opts)),
-                            Err(e) => print_error(&e, opts),
+            return None;
+        }
+        match convert::run_conversion(source, target, db) {
+            Ok(result) => {
+                println!("{}", format::format_result(&result, opts));
+                return Some(result);
+            }
+            Err(_) => {
+                // Fallback: try source as a constant name (e.g., "c_0 to mph").
+                if let Some(result) = try_constant_conversion(source, target, db) {
+                    match result {
+                        Ok(r) => {
+                            println!("{}", format::format_result(&r, opts));
+                            return Some(r);
                         }
-                    } else {
-                        // Re-run to get the original error message.
-                        if let Err(e) = convert::run_conversion(source, target, db) {
-                            print_error(&e, opts);
-                        }
+                        Err(e) => print_error(&e, opts),
+                    }
+                } else {
+                    // Re-run to get the original error message.
+                    if let Err(e) = convert::run_conversion(source, target, db) {
+                        print_error(&e, opts);
                     }
                 }
             }
         }
-        return;
+        return None;
     }
 
     // 2. ? prefix/suffix: "? meter", "meter ?", "1 N ?"
@@ -280,10 +319,10 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
         let has_number = query.contains(|c: char| c.is_ascii_digit());
         if has_number && let Ok(qty) = parser::parse_quantity(query, db) {
             handle_quantity_help_from_qty(qty, db, opts);
-            return;
+            return None;
         }
         handle_unit_help(query, db, opts);
-        return;
+        return None;
     }
 
     // 3. No delimiter, no ? — try parsing as a bare quantity.
@@ -292,6 +331,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
         Ok(qty) => {
             let annotation = quantity_name(&qty.unit.dimensions);
             let result = convert::ConversionResult {
+                source: qty.clone(),
                 result: qty,
                 annotation,
             };
@@ -304,6 +344,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
                 let qty = crate::units::Quantity::new(c.value, c.unit.clone());
                 let annotation = quantity_name(&qty.unit.dimensions);
                 let result = convert::ConversionResult {
+                    source: qty.clone(),
                     result: qty,
                     annotation,
                 };
@@ -313,6 +354,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
             }
         }
     }
+    None
 }
 
 /// Strip a command prefix (e.g., "const", "list") and return the trimmed argument.
@@ -389,6 +431,7 @@ fn handle_quantity_help_from_qty(
 ) {
     let annotation = quantity_name(&qty.unit.dimensions);
     let result = convert::ConversionResult {
+        source: qty.clone(),
         result: qty.clone(),
         annotation,
     };
@@ -429,7 +472,11 @@ fn try_constant_conversion(
         Err(e) => return Some(Err(e)),
     };
     let annotation = quantity_name(&result.unit.dimensions);
-    Some(Ok(convert::ConversionResult { result, annotation }))
+    Some(Ok(convert::ConversionResult {
+        source: qty,
+        result,
+        annotation,
+    }))
 }
 
 /// Handle `list <what> [filter]` — list units, dimensions, or constants.

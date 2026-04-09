@@ -51,7 +51,9 @@ impl Completer for UnitsHelper {
 
         // REPL commands (only at the start of the line).
         if word_start == 0 {
-            let commands = ["const", "list", "search", "help", "info", "quit", "exit"];
+            let commands = [
+                "const", "explain", "list", "search", "help", "info", "quit", "exit",
+            ];
             let cmd_matches: Vec<Pair> = commands
                 .iter()
                 .filter(|cmd| cmd.starts_with(partial) && **cmd != partial)
@@ -269,7 +271,7 @@ impl Highlighter for UnitsHelper {
 
             if matches!(
                 token,
-                "to" | "in" | "as" | "const" | "list" | "search" | "info" | "help"
+                "to" | "in" | "as" | "const" | "explain" | "list" | "search" | "info" | "help"
             ) {
                 result.push_str(&t.kw(token));
             } else if token.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {

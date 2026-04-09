@@ -230,3 +230,44 @@ fn degree_sign_alias_works() {
         .success()
         .stdout(predicate::str::contains("212"));
 }
+
+// ---- --explain flag (Phase 5a) ----
+
+#[test]
+fn explain_simple_linear() {
+    runits()
+        .arg("--explain")
+        .arg("10 ft")
+        .arg("m")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("factor:"))
+        .stdout(predicate::str::contains("0.3048"))
+        .stdout(predicate::str::contains("3.048"));
+}
+
+#[test]
+fn explain_compound_linear() {
+    runits()
+        .arg("--explain")
+        .arg("100 km/h")
+        .arg("mph")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("source:"))
+        .stdout(predicate::str::contains("target:"))
+        .stdout(predicate::str::contains("62.1371"));
+}
+
+#[test]
+fn explain_affine_temperature() {
+    runits()
+        .arg("--explain")
+        .arg("98.6 degF")
+        .arg("degC")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("to base:"))
+        .stdout(predicate::str::contains("from base:"))
+        .stdout(predicate::str::contains("37"));
+}

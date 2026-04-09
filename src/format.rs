@@ -73,6 +73,7 @@ pub struct FormatOptions {
     pub unicode: bool,
     pub annotations: bool,
     pub json: bool,
+    pub explain: bool,
 }
 
 impl FormatOptions {
@@ -94,6 +95,9 @@ impl FormatOptions {
 pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String {
     if opts.json {
         return format_json(result, opts);
+    }
+    if opts.explain {
+        return format_explain(result, opts);
     }
 
     let t = Theme::new(opts.color);
@@ -131,6 +135,193 @@ pub fn format_result(result: &ConversionResult, opts: &FormatOptions) -> String 
     }
 
     out
+}
+
+/// Format a step-by-step conversion explanation.
+///
+/// Shows the conversion chain: source and target factors, intermediate
+/// base value, and the arithmetic that produces the result.
+pub fn format_explain(result: &ConversionResult, opts: &FormatOptions) -> String {
+    use crate::units::unit::ConversionKind;
+
+    let t = Theme::new(opts.color);
+    let source = &result.source;
+    let target = &result.result;
+    let fv = |v: f64| format_value(v, 6, false);
+
+    let uni = |s: &str| -> String {
+        if opts.unicode {
+            unicode_unit_name(s)
+        } else {
+            s.to_string()
+        }
+    };
+
+    let arrow = if opts.unicode { "\u{2192}" } else { "->" };
+    let minus = if opts.unicode { "\u{2212}" } else { "-" };
+    let times = if opts.unicode { "\u{00D7}" } else { "*" };
+    let divide = if opts.unicode { "\u{00F7}" } else { "/" };
+
+    let mut lines = Vec::new();
+
+    // Header: value source_unit → target_unit [Annotation]
+    let ann_str = result
+        .annotation
+        .map(|a| format!(" {}", t.dim(&format!("[{}]", a))))
+        .unwrap_or_default();
+    lines.push(format!(
+        "{} {} {} {}{}",
+        t.num(&fv(source.value)),
+        t.unit_text(&uni(&source.unit.name), &source.unit),
+        t.kw(arrow),
+        t.unit_text(&uni(&target.unit.name), &target.unit),
+        ann_str,
+    ));
+
+    let base_str = uni(&source.unit.to_base_unit_string());
+    let base_value = source.unit.to_base_value(source.value);
+    let source_affine = source.unit.is_affine();
+    let target_affine = target.unit.is_affine();
+
+    if source_affine || target_affine {
+        // Affine path (temperature conversions)
+        // Step 1: source → base (kelvin)
+        match &source.unit.conversion {
+            ConversionKind::Affine { scale, offset } => {
+                lines.push(format!(
+                    "  {} {} {} {} + {} = {} {}",
+                    t.dim("to base:"),
+                    t.num(&fv(source.value)),
+                    t.kw(times),
+                    t.num(&fv(*scale)),
+                    t.num(&fv(*offset)),
+                    t.num(&fv(base_value)),
+                    t.unit_text(&base_str, &source.unit),
+                ));
+            }
+            ConversionKind::Linear(f) => {
+                lines.push(format!(
+                    "  {} {} {} {} = {} {}",
+                    t.dim("to base:"),
+                    t.num(&fv(source.value)),
+                    t.kw(times),
+                    t.num(&fv(*f)),
+                    t.num(&fv(base_value)),
+                    t.unit_text(&base_str, &source.unit),
+                ));
+            }
+        }
+        // Step 2: base → target
+        match &target.unit.conversion {
+            ConversionKind::Affine { scale, offset } => {
+                lines.push(format!(
+                    "  {} ({} {} {}) {} {} = {} {}",
+                    t.dim("from base:"),
+                    t.num(&fv(base_value)),
+                    t.kw(minus),
+                    t.num(&fv(*offset)),
+                    t.kw(divide),
+                    t.num(&fv(*scale)),
+                    t.num(&fv(target.value)),
+                    t.unit_text(&uni(&target.unit.name), &target.unit),
+                ));
+            }
+            ConversionKind::Linear(f) => {
+                lines.push(format!(
+                    "  {} {} {} {} = {} {}",
+                    t.dim("from base:"),
+                    t.num(&fv(base_value)),
+                    t.kw(divide),
+                    t.num(&fv(*f)),
+                    t.num(&fv(target.value)),
+                    t.unit_text(&uni(&target.unit.name), &target.unit),
+                ));
+            }
+        }
+    } else {
+        // Linear path
+        let source_factor = source.unit.conversion_factor();
+        let target_factor = target.unit.conversion_factor();
+        let source_is_base = (source_factor - 1.0).abs() < 1e-15;
+        let target_is_base = (target_factor - 1.0).abs() < 1e-15;
+
+        if source_is_base && target_is_base {
+            // Same base unit (identity or dimensionless)
+            lines.push(format!(
+                "  {} {} {} {} {}",
+                t.dim("chain:"),
+                t.num(&fv(source.value)),
+                t.kw("="),
+                t.num(&fv(target.value)),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+            ));
+        } else if target_is_base {
+            // Target is the base unit — simplified display
+            lines.push(format!(
+                "  {} 1 {} = {} {}",
+                t.dim("factor:"),
+                t.unit_text(&uni(&source.unit.name), &source.unit),
+                t.num(&fv(source_factor)),
+                t.unit_text(&base_str, &target.unit),
+            ));
+            lines.push(format!(
+                "  {} {} {} {} = {} {}",
+                t.dim("chain:"),
+                t.num(&fv(source.value)),
+                t.kw(times),
+                t.num(&fv(source_factor)),
+                t.num(&fv(target.value)),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+            ));
+        } else if source_is_base {
+            // Source is the base unit
+            lines.push(format!(
+                "  {} 1 {} = {} {}",
+                t.dim("factor:"),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+                t.num(&fv(target_factor)),
+                t.unit_text(&base_str, &source.unit),
+            ));
+            lines.push(format!(
+                "  {} {} {} {} = {} {}",
+                t.dim("chain:"),
+                t.num(&fv(source.value)),
+                t.kw(divide),
+                t.num(&fv(target_factor)),
+                t.num(&fv(target.value)),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+            ));
+        } else {
+            // General case: both have non-unity factors
+            lines.push(format!(
+                "  {} 1 {} = {} {}",
+                t.dim("source:"),
+                t.unit_text(&uni(&source.unit.name), &source.unit),
+                t.num(&fv(source_factor)),
+                t.unit_text(&base_str, &source.unit),
+            ));
+            lines.push(format!(
+                "  {} 1 {} = {} {}",
+                t.dim("target:"),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+                t.num(&fv(target_factor)),
+                t.unit_text(&base_str, &target.unit),
+            ));
+            lines.push(format!(
+                "  {} {} {} {} {} {} = {} {}",
+                t.dim("chain:"),
+                t.num(&fv(source.value)),
+                t.kw(times),
+                t.num(&fv(source_factor)),
+                t.kw(divide),
+                t.num(&fv(target_factor)),
+                t.num(&fv(target.value)),
+                t.unit_text(&uni(&target.unit.name), &target.unit),
+            ));
+        }
+    }
+
+    lines.join("\n")
 }
 
 fn format_json(result: &ConversionResult, opts: &FormatOptions) -> String {
@@ -498,5 +689,66 @@ mod tests {
     #[test]
     fn unicode_noop_on_simple_name() {
         assert_eq!(unicode_unit_name("meter"), "meter");
+    }
+
+    // ---- Explain tests ----
+
+    #[test]
+    fn explain_simple_linear() {
+        let db = UnitDatabase::new();
+        let r = run_conversion("10 ft", "m", &db).unwrap();
+        let opts = FormatOptions {
+            explain: true,
+            ..Default::default()
+        };
+        let out = format_result(&r, &opts);
+        assert!(out.contains("foot"));
+        assert!(out.contains("meter"));
+        assert!(out.contains("0.3048"));
+        assert!(out.contains("3.048"));
+        assert!(out.contains("factor:"));
+        assert!(out.contains("chain:"));
+    }
+
+    #[test]
+    fn explain_compound_linear() {
+        let db = UnitDatabase::new();
+        let r = run_conversion("100 km/h", "mph", &db).unwrap();
+        let opts = FormatOptions {
+            explain: true,
+            ..Default::default()
+        };
+        let out = format_result(&r, &opts);
+        assert!(out.contains("source:"));
+        assert!(out.contains("target:"));
+        assert!(out.contains("chain:"));
+        assert!(out.contains("62.1371"));
+    }
+
+    #[test]
+    fn explain_affine_temperature() {
+        let db = UnitDatabase::new();
+        let r = run_conversion("98.6 degF", "degC", &db).unwrap();
+        let opts = FormatOptions {
+            explain: true,
+            ..Default::default()
+        };
+        let out = format_result(&r, &opts);
+        assert!(out.contains("to base:"));
+        assert!(out.contains("from base:"));
+        assert!(out.contains("37"));
+    }
+
+    #[test]
+    fn explain_base_to_base() {
+        let db = UnitDatabase::new();
+        let r = run_conversion("5 m", "m", &db).unwrap();
+        let opts = FormatOptions {
+            explain: true,
+            ..Default::default()
+        };
+        let out = format_result(&r, &opts);
+        assert!(out.contains("chain:"));
+        assert!(out.contains("5"));
     }
 }

@@ -10,8 +10,10 @@ use crate::parser;
 use crate::units::Quantity;
 
 /// The structured output of a single conversion, before any formatting.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConversionResult {
+    /// The original input quantity (value + source unit), kept for `--explain`.
+    pub source: Quantity,
     /// The converted quantity (value + target unit).
     pub result: Quantity,
     /// Named physical quantity, if the target dimensions match a known one
@@ -27,10 +29,15 @@ pub fn run_conversion(
 ) -> Result<ConversionResult, RUnitsError> {
     let source_qty = parser::parse_quantity(source, db)?;
     let target_unit = parser::parse_unit_name(target, db)?;
+    let source = source_qty.clone();
     let result = source_qty.convert_to(&target_unit)?;
     let annotation = quantity_name(&result.unit.dimensions);
 
-    Ok(ConversionResult { result, annotation })
+    Ok(ConversionResult {
+        source,
+        result,
+        annotation,
+    })
 }
 
 #[cfg(test)]

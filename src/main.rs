@@ -74,6 +74,7 @@ fn resolve_opts(cli: &Cli, config: &Config, is_repl: bool) -> FormatOptions {
         unicode: cli.pretty || config.unicode.unwrap_or(is_repl && is_tty),
         annotations: is_repl,
         json: cli.json,
+        explain: cli.explain,
     }
 }
 
