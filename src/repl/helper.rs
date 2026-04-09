@@ -51,7 +51,7 @@ impl Completer for UnitsHelper {
 
         // REPL commands (only at the start of the line).
         if word_start == 0 {
-            let commands = ["const", "search", "info", "quit", "exit"];
+            let commands = ["const", "list", "search", "help", "info", "quit", "exit"];
             let cmd_matches: Vec<Pair> = commands
                 .iter()
                 .filter(|cmd| cmd.starts_with(partial) && **cmd != partial)
@@ -65,8 +65,25 @@ impl Completer for UnitsHelper {
             }
         }
 
-        // After "search ", suggest quantity names (case-insensitive prefix).
-        if line[..word_start].trim_end().eq_ignore_ascii_case("search") {
+        // After "list ", suggest sub-commands, then contextual completions.
+        let prefix_cmd = line[..word_start].trim_end();
+        if prefix_cmd.eq_ignore_ascii_case("list") {
+            let subs = ["units", "dimensions", "quantities", "constants"];
+            let sub_matches: Vec<Pair> = subs
+                .iter()
+                .filter(|s| s.starts_with(&partial.to_lowercase()))
+                .map(|s| Pair {
+                    display: s.to_string(),
+                    replacement: s.to_string(),
+                })
+                .collect();
+            return Ok((word_start, sub_matches));
+        }
+
+        // After "list units " or "search ", suggest dimension/quantity names.
+        if prefix_cmd.eq_ignore_ascii_case("list units")
+            || prefix_cmd.eq_ignore_ascii_case("search")
+        {
             let partial_lower = partial.to_lowercase();
             let qty_matches: Vec<Pair> = annotations::all_quantity_names()
                 .into_iter()
@@ -161,8 +178,21 @@ impl Hinter for UnitsHelper {
             return None;
         }
 
-        // After "search ", hint quantity names (case-insensitive prefix).
-        if line[..word_start].trim_end().eq_ignore_ascii_case("search") {
+        // After "list ", hint sub-commands.
+        let prefix_cmd = line[..word_start].trim_end();
+        if prefix_cmd.eq_ignore_ascii_case("list") {
+            let subs = ["units", "dimensions", "quantities", "constants"];
+            return subs
+                .iter()
+                .filter(|s| s.starts_with(&partial.to_lowercase()))
+                .min_by_key(|s| s.len())
+                .map(|s| s[partial.len()..].to_string());
+        }
+
+        // After "list units " or "search ", hint quantity names.
+        if prefix_cmd.eq_ignore_ascii_case("list units")
+            || prefix_cmd.eq_ignore_ascii_case("search")
+        {
             let partial_lower = partial.to_lowercase();
             return annotations::all_quantity_names()
                 .into_iter()
@@ -237,7 +267,10 @@ impl Highlighter for UnitsHelper {
             }
             let token = &line[start..i];
 
-            if matches!(token, "to" | "in" | "as" | "const" | "search" | "info") {
+            if matches!(
+                token,
+                "to" | "in" | "as" | "const" | "list" | "search" | "info" | "help"
+            ) {
                 result.push_str(&t.kw(token));
             } else if token.starts_with(|c: char| c.is_ascii_digit() || c == '-' || c == '.') {
                 result.push_str(&t.num(token));

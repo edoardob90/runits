@@ -67,27 +67,25 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
                     print_info(&t, db);
                     continue;
                 }
-                if let Some(name) = line
-                    .strip_prefix("const ")
-                    .or_else(|| line.strip_prefix("const\t"))
-                {
-                    let name = name.trim();
-                    if !name.is_empty() {
-                        handle_const_command(name, opts);
-                        let _ = rl.add_history_entry(line);
-                        continue;
-                    }
+                if line == "help" || line == "?" {
+                    print_help(&t);
+                    continue;
                 }
-                if let Some(query) = line
-                    .strip_prefix("search ")
-                    .or_else(|| line.strip_prefix("search\t"))
-                {
-                    let query = query.trim();
-                    if !query.is_empty() {
-                        handle_search_command(query, db, opts);
-                        let _ = rl.add_history_entry(line);
-                        continue;
-                    }
+                if let Some(name) = strip_command_arg(line, "const") {
+                    handle_const_command(name, opts);
+                    let _ = rl.add_history_entry(line);
+                    continue;
+                }
+                if let Some(rest) = strip_command_arg(line, "list") {
+                    handle_list_command(rest, db, opts);
+                    let _ = rl.add_history_entry(line);
+                    continue;
+                }
+                // Legacy alias: `search` → `list units`
+                if let Some(query) = strip_command_arg(line, "search") {
+                    handle_list_command(&format!("units {query}"), db, opts);
+                    let _ = rl.add_history_entry(line);
+                    continue;
                 }
                 let _ = rl.add_history_entry(line);
 
@@ -155,6 +153,45 @@ fn print_banner(mode: crate::cli::BannerMode, t: &Theme, db: &UnitDatabase) {
             println!();
         }
     }
+}
+
+/// Print database/config info for CLI `--info` flag (no REPL context).
+pub fn print_info_standalone(opts: &FormatOptions) {
+    let t = Theme::new(opts.color);
+    let db = database::global();
+    print_info(&t, db);
+}
+
+fn print_help(t: &Theme) {
+    println!("  {}", t.kw("Commands:"));
+    println!(
+        "    {} {} {}    convert between units",
+        t.dim("<qty>"),
+        t.kw("to"),
+        t.dim("<unit>")
+    );
+    println!(
+        "    {} {}              unit/constant info",
+        t.kw("?"),
+        t.dim("<name>")
+    );
+    println!(
+        "    {} {} {}   list units, dimensions, constants",
+        t.kw("list"),
+        t.dim("units|dimensions|constants"),
+        t.dim("[filter]")
+    );
+    println!(
+        "    {} {}          show constant value",
+        t.kw("const"),
+        t.dim("<name>")
+    );
+    println!(
+        "    {}                    database & config info",
+        t.kw("info")
+    );
+    println!("    {}                    this help", t.kw("help"));
+    println!("    {}                    exit", t.kw("quit"));
 }
 
 fn print_info(t: &Theme, db: &UnitDatabase) {
@@ -262,6 +299,21 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
     }
 }
 
+/// Strip a command prefix (e.g., "const", "list") and return the trimmed argument.
+/// Returns `None` if the line doesn't start with the command followed by whitespace,
+/// or if the argument is empty.
+fn strip_command_arg<'a>(line: &'a str, command: &str) -> Option<&'a str> {
+    let rest = line
+        .strip_prefix(command)
+        .filter(|r| r.starts_with(' ') || r.starts_with('\t'))?;
+    let trimmed = rest.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 /// Strip `?` from start or end, returning the remainder to look up.
 fn strip_question_mark(line: &str) -> Option<&str> {
     if let Some(rest) = line.strip_prefix('?') {
@@ -364,21 +416,52 @@ fn try_constant_conversion(
     Some(Ok(convert::ConversionResult { result, annotation }))
 }
 
-/// Handle `search <query>` — find conformable units for a quantity name or unit.
-///
-/// Accepts either a quantity name ("velocity", "force") or a unit name
-/// ("meter", "N"). For quantity names, looks up the dimension signature
-/// via the annotations registry. For unit names, uses the unit's dimensions.
-fn handle_search_command(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
+/// Handle `list <what> [filter]` — list units, dimensions, or constants.
+fn handle_list_command(rest: &str, db: &UnitDatabase, opts: &FormatOptions) {
     let t = Theme::new(opts.color);
+    let (what, filter) = match rest.split_once(|c: char| c.is_whitespace()) {
+        Some((w, f)) => (w.trim(), Some(f.trim())),
+        None => (rest.trim(), None),
+    };
+
+    match what.to_lowercase().as_str() {
+        "units" => handle_list_units(filter, db, opts),
+        "dimensions" | "quantities" => handle_list_dimensions(opts),
+        "constants" => handle_list_constants(opts),
+        _ => {
+            eprintln!(
+                "{}",
+                t.err(&format!("Error: unknown list target: '{what}'"))
+            );
+            eprintln!("  Usage: list units|dimensions|constants [filter]");
+        }
+    }
+}
+
+/// List units, optionally filtered by dimension/quantity name.
+fn handle_list_units(filter: Option<&str>, db: &UnitDatabase, opts: &FormatOptions) {
+    let t = Theme::new(opts.color);
+
+    let Some(query) = filter else {
+        // No filter — show all units grouped by dimension.
+        let groups = build_unit_groups(db);
+        for (qty_name, unit_names) in &groups {
+            let dims = annotations::dimensions_for_name(qty_name);
+            println!(
+                "{}",
+                format::format_unit_list(qty_name, unit_names, dims.as_ref(), opts)
+            );
+        }
+        return;
+    };
 
     // Try exact quantity name match (case-insensitive).
     if let Some(dims) = annotations::dimensions_for_name(query) {
-        print_search_results(query, &dims, db, opts);
+        print_unit_search_results(query, &dims, db, opts);
         return;
     }
 
-    // Try case-insensitive prefix match on quantity names (e.g., "vel" → "Velocity").
+    // Try case-insensitive prefix match on quantity names.
     let query_lower = query.to_lowercase();
     let prefix_match = annotations::all_quantity_names()
         .into_iter()
@@ -386,7 +469,7 @@ fn handle_search_command(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
     if let Some(matched_name) = prefix_match
         && let Some(dims) = annotations::dimensions_for_name(matched_name)
     {
-        print_search_results(matched_name, &dims, db, opts);
+        print_unit_search_results(matched_name, &dims, db, opts);
         return;
     }
 
@@ -401,25 +484,38 @@ fn handle_search_command(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
         return;
     }
 
-    // Nothing matched — show colored quantity list.
+    // Nothing matched.
     eprintln!(
         "{}",
-        t.err(&format!("Error: unknown quantity or unit: '{query}'"))
+        t.err(&format!("Error: unknown dimension or unit: '{query}'"))
     );
-    let names = annotations::all_quantity_names();
-    let colored_names: Vec<String> = names
-        .iter()
-        .map(|name| {
-            annotations::dimensions_for_name(name)
-                .map(|d| t.paint(name, t.dims_style(&d)))
-                .unwrap_or_else(|| name.to_string())
-        })
-        .collect();
-    eprintln!("  Known quantities: {}", colored_names.join(", "));
+    print_known_dimensions(&t);
 }
 
-/// Print search results for a quantity name with known dimensions.
-fn print_search_results(
+fn handle_list_dimensions(opts: &FormatOptions) {
+    let t = Theme::new(opts.color);
+    let names = annotations::all_quantity_names();
+    for name in &names {
+        let colored = annotations::dimensions_for_name(name)
+            .map(|d| t.paint(name, t.dims_style(&d)))
+            .unwrap_or_else(|| name.to_string());
+        println!("  {colored}");
+    }
+}
+
+fn handle_list_constants(opts: &FormatOptions) {
+    let t = Theme::new(opts.color);
+    let const_db = constants::global();
+    let mut all = const_db.all_unique();
+    all.sort_by_key(|c| c.name);
+    for c in &all {
+        let val = crate::units::quantity::format_value(c.value, 6, false);
+        println!("  {} = {} {}", t.cst(c.name), t.num(&val), c.unit.name);
+    }
+}
+
+/// Print units matching a dimension query.
+fn print_unit_search_results(
     query: &str,
     dims: &crate::units::dimension::DimensionMap,
     db: &UnitDatabase,
@@ -433,6 +529,42 @@ fn print_search_results(
         "{}",
         format::format_unit_list(qty_name, &compat, Some(dims), opts)
     );
+}
+
+/// Print the colored list of known dimensions/quantities.
+fn print_known_dimensions(t: &Theme) {
+    let names = annotations::all_quantity_names();
+    let colored_names: Vec<String> = names
+        .iter()
+        .map(|name| {
+            annotations::dimensions_for_name(name)
+                .map(|d| t.paint(name, t.dims_style(&d)))
+                .unwrap_or_else(|| name.to_string())
+        })
+        .collect();
+    eprintln!("  Known dimensions: {}", colored_names.join(", "));
+}
+
+/// Build groups of (quantity_name, [unit_names]) from the database.
+pub fn build_unit_groups(db: &UnitDatabase) -> Vec<(String, Vec<String>)> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let mut groups: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut seen = std::collections::HashSet::new();
+    for name in db.unit_names() {
+        if let Some(unit) = db.lookup(name) {
+            if !seen.insert(unit.name.clone()) {
+                continue;
+            }
+            let qty = quantity_name(&unit.dimensions)
+                .unwrap_or("Other")
+                .to_string();
+            groups.entry(qty).or_default().insert(unit.name.clone());
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().collect()))
+        .collect()
 }
 
 /// Handle `const <name>` — echo a physical constant as a quantity.

@@ -39,6 +39,10 @@ pub struct Cli {
     #[arg(long)]
     pub batch: bool,
 
+    /// Print database and configuration info, then exit
+    #[arg(short = 'I', long)]
+    pub info: bool,
+
     /// REPL intro banner mode
     #[arg(long, value_enum)]
     pub intro_banner: Option<BannerMode>,
@@ -62,10 +66,24 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
-    /// List known units, optionally filtered by physical quantity
-    #[command(name = "list-units")]
-    ListUnits {
-        /// Filter by quantity name (e.g., "velocity", "force", "length")
+    /// List units, dimensions, or constants
+    List {
+        #[command(subcommand)]
+        what: ListWhat,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ListWhat {
+    /// List known units, optionally filtered by dimension/quantity
+    Units {
+        /// Filter by dimension or quantity name (e.g., "velocity", "force")
         filter: Option<String>,
     },
+    /// List known dimensions (physical quantities)
+    Dimensions,
+    /// List known dimensions (alias for `dimensions`)
+    Quantities,
+    /// List physical constants
+    Constants,
 }

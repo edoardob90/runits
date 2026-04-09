@@ -8,8 +8,7 @@ use std::io::IsTerminal;
 
 use clap::Parser;
 use runits::{
-    cli::Cli,
-    cli::Commands,
+    cli::{Cli, Commands, ListWhat},
     config::Config,
     convert, database,
     error::RUnitsError,
@@ -28,21 +27,28 @@ fn run() -> Result<(), RUnitsError> {
 
     // Subcommands take priority (no config needed).
     if let Some(cmd) = &cli.command {
+        let config = Config::load();
+        let opts = resolve_opts(&cli, &config, false);
         return match cmd {
             Commands::Completions { shell } => {
                 generate_completions(*shell);
                 Ok(())
             }
-            Commands::ListUnits { filter } => {
-                let config = Config::load();
-                let opts = resolve_opts(&cli, &config, false);
-                list_units(filter.as_deref(), &opts);
+            Commands::List { what } => {
+                run_list(what, &opts);
                 Ok(())
             }
         };
     }
 
     let config = Config::load();
+
+    // --info flag: print database/config info and exit.
+    if cli.info {
+        let opts = resolve_opts(&cli, &config, false);
+        runits::repl::print_info_standalone(&opts);
+        return Ok(());
+    }
 
     // Dispatch based on positional args.
     match (&cli.quantity, &cli.target) {
@@ -126,14 +132,30 @@ fn run_batch(cli: &Cli, config: &Config) -> Result<(), RUnitsError> {
     Ok(())
 }
 
-fn list_units(filter: Option<&str>, opts: &FormatOptions) {
+fn run_list(what: &ListWhat, opts: &FormatOptions) {
     let db = database::global();
 
+    match what {
+        ListWhat::Units { filter } => list_units(filter.as_deref(), db, opts),
+        ListWhat::Dimensions | ListWhat::Quantities => list_dimensions(opts),
+        ListWhat::Constants => list_constants(opts),
+    }
+}
+
+fn list_units(filter: Option<&str>, db: &runits::database::UnitDatabase, opts: &FormatOptions) {
     if let Some(query) = filter {
-        // Filtered: try as quantity name, then as unit name.
-        if let Some(dims) = runits::annotations::dimensions_for_name(query) {
+        // Filtered: try as quantity name (exact, then prefix), then as unit name.
+        let dims = runits::annotations::dimensions_for_name(query).or_else(|| {
+            let q = query.to_lowercase();
+            runits::annotations::all_quantity_names()
+                .into_iter()
+                .find(|n| n.to_lowercase().starts_with(&q))
+                .and_then(runits::annotations::dimensions_for_name)
+        });
+
+        if let Some(dims) = dims {
             let qty_name = runits::annotations::quantity_name(&dims).unwrap_or(query);
-            let dims_vec: Vec<_> = dims.into_iter().collect();
+            let dims_vec: Vec<_> = dims.iter().map(|(d, &e)| (d.clone(), e)).collect();
             let synthetic = runits::Unit::new("_query", 1.0, &dims_vec);
             let compat = db.compatible_units(&synthetic);
             if opts.json {
@@ -141,7 +163,7 @@ fn list_units(filter: Option<&str>, opts: &FormatOptions) {
             } else {
                 println!(
                     "{}",
-                    format::format_unit_list(qty_name, &compat, Some(&synthetic.dimensions), opts)
+                    format::format_unit_list(qty_name, &compat, Some(&dims), opts)
                 );
             }
         } else if let Ok(unit) = runits::parser::parse_unit_name(query, db) {
@@ -157,14 +179,13 @@ fn list_units(filter: Option<&str>, opts: &FormatOptions) {
                 );
             }
         } else {
-            eprintln!("Error: unknown quantity or unit: '{query}'");
+            eprintln!("Error: unknown dimension or unit: '{query}'");
             let names = runits::annotations::all_quantity_names();
-            eprintln!("  Known quantities: {}", names.join(", "));
+            eprintln!("  Known dimensions: {}", names.join(", "));
             std::process::exit(1);
         }
     } else {
-        // Unfiltered: show all units grouped by quantity.
-        let groups = build_unit_groups(db);
+        let groups = runits::repl::build_unit_groups(db);
         if opts.json {
             print_json_all_groups(&groups);
         } else {
@@ -173,30 +194,44 @@ fn list_units(filter: Option<&str>, opts: &FormatOptions) {
     }
 }
 
-/// Build groups of (quantity_name, [unit_names]) from the database.
-fn build_unit_groups(db: &runits::database::UnitDatabase) -> Vec<(String, Vec<String>)> {
-    use std::collections::{BTreeMap, BTreeSet};
-
-    let mut groups: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-
-    // Collect unique canonical names with their annotations.
-    let mut seen = std::collections::HashSet::new();
-    for name in db.unit_names() {
-        if let Some(unit) = db.lookup(name) {
-            if !seen.insert(unit.name.clone()) {
-                continue;
-            }
-            let qty = runits::annotations::quantity_name(&unit.dimensions)
-                .unwrap_or("Other")
-                .to_string();
-            groups.entry(qty).or_default().insert(unit.name.clone());
+fn list_dimensions(opts: &FormatOptions) {
+    let names = runits::annotations::all_quantity_names();
+    if opts.json {
+        let json: Vec<String> = names.iter().map(|n| format!("\"{}\"", n)).collect();
+        println!("[{}]", json.join(","));
+    } else {
+        let t = runits::theme::Theme::new(opts.color);
+        for name in &names {
+            let colored = runits::annotations::dimensions_for_name(name)
+                .map(|d| t.paint(name, t.dims_style(&d)))
+                .unwrap_or_else(|| name.to_string());
+            println!("  {}", colored);
         }
     }
+}
 
-    groups
-        .into_iter()
-        .map(|(k, v)| (k, v.into_iter().collect()))
-        .collect()
+fn list_constants(opts: &FormatOptions) {
+    let const_db = runits::database::constants::global();
+    let mut constants = const_db.all_unique();
+    constants.sort_by_key(|c| c.name);
+    if opts.json {
+        let entries: Vec<String> = constants
+            .iter()
+            .map(|c| {
+                format!(
+                    "{{\"name\":\"{}\",\"value\":{},\"unit\":\"{}\"}}",
+                    c.name, c.value, c.unit.name
+                )
+            })
+            .collect();
+        println!("[{}]", entries.join(","));
+    } else {
+        let t = runits::theme::Theme::new(opts.color);
+        for c in &constants {
+            let val = runits::units::quantity::format_value(c.value, 6, false);
+            println!("  {} = {} {}", t.cst(c.name), t.num(&val), c.unit.name);
+        }
+    }
 }
 
 fn print_json_unit_list(quantity: &str, units: &[String]) {
