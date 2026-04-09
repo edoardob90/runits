@@ -163,35 +163,51 @@ pub fn print_info_standalone(opts: &FormatOptions) {
 }
 
 fn print_help(t: &Theme) {
+    // (visible_command, styled_command, description)
+    // (plain_text for width calc, styled_text, description)
+    let rows: Vec<(&str, String, &str)> = vec![
+        (
+            "<qty> to <unit>",
+            format!("{} {} {}", t.dim("<qty>"), t.kw("to"), t.dim("<unit>")),
+            "convert between units",
+        ),
+        (
+            "? <name>",
+            format!("{} {}", t.kw("?"), t.dim("<name>")),
+            "unit or constant info",
+        ),
+        (
+            "list units|dimensions|constants [filter]",
+            format!(
+                "{} {} {}",
+                t.kw("list"),
+                t.dim("units|dimensions|constants"),
+                t.dim("[filter]")
+            ),
+            "browse the database",
+        ),
+        (
+            "const <name>",
+            format!("{} {}", t.kw("const"), t.dim("<name>")),
+            "show constant value",
+        ),
+        ("info", t.kw("info"), "database & config info"),
+        ("help", t.kw("help"), "this help"),
+        ("quit", t.kw("quit"), "exit"),
+    ];
+
+    let col_width = rows
+        .iter()
+        .map(|(plain, _, _)| plain.len())
+        .max()
+        .unwrap_or(0)
+        + 2;
+
     println!("  {}", t.kw("Commands:"));
-    println!(
-        "    {} {} {}    convert between units",
-        t.dim("<qty>"),
-        t.kw("to"),
-        t.dim("<unit>")
-    );
-    println!(
-        "    {} {}              unit/constant info",
-        t.kw("?"),
-        t.dim("<name>")
-    );
-    println!(
-        "    {} {} {}   list units, dimensions, constants",
-        t.kw("list"),
-        t.dim("units|dimensions|constants"),
-        t.dim("[filter]")
-    );
-    println!(
-        "    {} {}          show constant value",
-        t.kw("const"),
-        t.dim("<name>")
-    );
-    println!(
-        "    {}                    database & config info",
-        t.kw("info")
-    );
-    println!("    {}                    this help", t.kw("help"));
-    println!("    {}                    exit", t.kw("quit"));
+    for (plain, styled, desc) in &rows {
+        let pad = col_width.saturating_sub(plain.len());
+        println!("    {styled}{:pad$}  {desc}", "");
+    }
 }
 
 fn print_info(t: &Theme, db: &UnitDatabase) {
