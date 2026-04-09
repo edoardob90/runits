@@ -3,7 +3,7 @@
 //! Each base dimension has its own color. Units inherit color from their
 //! dimension (single-dimension) or use the compound style (multi-dimension).
 //! Flexoki-inspired (https://github.com/kepano/flexoki) ANSI defaults.
-//! FUTURE: loadable from config.toml.
+//! FUTURE(theme-config): loadable from config.toml
 
 use crate::units::dimension::Dimension;
 use owo_colors::Style;

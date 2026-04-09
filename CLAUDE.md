@@ -144,6 +144,7 @@ Full feature catalog with phase affinity lives in `docs/roadmap.md`.
 - Factory methods (e.g., `Unit::meter()`) for common constructions
 - Doc-test every public API example
 - Commit messages: short imperative subject (~50 char), no co-author lines
+- **FUTURE markers:** `FUTURE(tag): description` in comments. Tag is kebab-case, groups related call-sites (e.g. `alias-types`). Both tag and description are required. Grep with `rg 'FUTURE\('` to list all
 
 ## Testing Strategy
 
