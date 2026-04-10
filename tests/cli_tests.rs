@@ -235,13 +235,15 @@ fn degree_sign_alias_works() {
 
 #[test]
 fn explain_simple_linear() {
+    // 10 ft → m: target is base, so only `source:` appears.
     runits()
         .arg("--explain")
         .arg("10 ft")
         .arg("m")
         .assert()
         .success()
-        .stdout(predicate::str::contains("factor:"))
+        .stdout(predicate::str::contains("source:"))
+        .stdout(predicate::str::contains("target:").not())
         .stdout(predicate::str::contains("0.3048"))
         .stdout(predicate::str::contains("3.048"));
 }
@@ -260,14 +262,18 @@ fn explain_compound_linear() {
 }
 
 #[test]
-fn explain_affine_temperature() {
+fn explain_affine_temperature_harmonized_labels() {
+    // Affine conversions use the same `source:` / `target:` labels as linear,
+    // not the old `to base:` / `from base:` style.
     runits()
         .arg("--explain")
         .arg("98.6 degF")
         .arg("degC")
         .assert()
         .success()
-        .stdout(predicate::str::contains("to base:"))
-        .stdout(predicate::str::contains("from base:"))
+        .stdout(predicate::str::contains("source:"))
+        .stdout(predicate::str::contains("target:"))
+        .stdout(predicate::str::contains("to base:").not())
+        .stdout(predicate::str::contains("from base:").not())
         .stdout(predicate::str::contains("37"));
 }
