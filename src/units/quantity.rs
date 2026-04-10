@@ -268,7 +268,7 @@ mod tests {
     fn format_value_custom_precision() {
         // Default: strips trailing zeros
         assert_eq!(format_value(62.1371192237334, 3, false), "62.1");
-        assert_eq!(format_value(3.14159265, 4, false), "3.142");
+        assert_eq!(format_value(1.23456789, 4, false), "1.235");
     }
 
     #[test]
