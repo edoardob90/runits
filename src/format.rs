@@ -18,7 +18,7 @@ use crate::units::quantity::{format_value, format_value_inner};
 pub const UNIT_SYSTEM: &str = "SI";
 
 // ---------------------------------------------------------------------------
-// Glyphs — ASCII vs Unicode presentational symbols
+// Glyphs: ASCII vs Unicode presentational symbols
 // ---------------------------------------------------------------------------
 
 /// Presentational glyphs for arithmetic and unit rendering.
@@ -336,7 +336,7 @@ pub fn format_explain(result: &ConversionResult, opts: &FormatOptions) -> String
     // Calculation section: indented, values plugged in. One step per non-trivial
     // side. Identity conversions (both sides are the base unit) just echo the
     // result so the user sees *something* in the standout block.
-    let indent = "      ";
+    let indent = "    ";
     if !source_is_base {
         lines.push(format!("{}{}", indent, to_base_step(&source.unit)));
     }
