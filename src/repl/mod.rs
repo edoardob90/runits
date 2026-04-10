@@ -50,6 +50,7 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
 
     let t = Theme::new(opts.color);
     let db = database::global();
+    let mut last_conversion: Option<convert::ConversionResult> = None;
 
     print_banner(banner, &t, db);
 
@@ -63,33 +64,88 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
                 if line == "quit" || line == "exit" {
                     break;
                 }
-                if line == "info" {
-                    print_info(&t, db);
-                    continue;
-                }
-                if line == "help" || line == "?" {
+                // `?` stays a strict equality check — it's punctuation, not a word.
+                if line == "?" {
                     print_help(&t);
                     continue;
                 }
-                if let Some(name) = strip_command_arg(line, "const") {
-                    handle_const_command(name, opts);
-                    let _ = rl.add_history_entry(line);
+
+                // Argless commands: info, help, explain. Reject trailing args
+                // uniformly via `print_extra_args_error`.
+                if let Some(args) = match_command(line, "info") {
+                    if !args.is_empty() {
+                        print_extra_args_error("info", args, &t);
+                    } else {
+                        print_info(&t, db);
+                    }
                     continue;
                 }
-                if let Some(rest) = strip_command_arg(line, "list") {
-                    handle_list_command(rest, db, opts);
+                if let Some(args) = match_command(line, "help") {
+                    if !args.is_empty() {
+                        print_extra_args_error("help", args, &t);
+                    } else {
+                        print_help(&t);
+                    }
+                    continue;
+                }
+                if let Some(args) = match_command(line, "explain") {
                     let _ = rl.add_history_entry(line);
+                    if !args.is_empty() {
+                        print_extra_args_error("explain", args, &t);
+                    } else if let Some(ref conv) = last_conversion {
+                        let explain_opts = FormatOptions {
+                            explain: true,
+                            ..opts.clone()
+                        };
+                        println!("{}", format::format_explain(conv, &explain_opts));
+                    } else {
+                        eprintln!(
+                            "{}",
+                            t.err("No conversion to explain. Run a conversion first.")
+                        );
+                    }
+                    continue;
+                }
+
+                // Arged commands: const, list, search. Reject empty args.
+                if let Some(args) = match_command(line, "const") {
+                    let _ = rl.add_history_entry(line);
+                    if args.is_empty() {
+                        print_missing_arg_error("const", "const <name>", &t);
+                    } else {
+                        handle_const_command(args, opts);
+                    }
+                    continue;
+                }
+                if let Some(args) = match_command(line, "list") {
+                    let _ = rl.add_history_entry(line);
+                    if args.is_empty() {
+                        print_missing_arg_error(
+                            "list",
+                            "list units|dimensions|constants [filter]",
+                            &t,
+                        );
+                    } else {
+                        handle_list_command(args, db, opts);
+                    }
                     continue;
                 }
                 // Legacy alias: `search` → `list units`
-                if let Some(query) = strip_command_arg(line, "search") {
-                    handle_list_command(&format!("units {query}"), db, opts);
+                if let Some(args) = match_command(line, "search") {
                     let _ = rl.add_history_entry(line);
+                    if args.is_empty() {
+                        print_missing_arg_error("search", "search <query>", &t);
+                    } else {
+                        handle_list_command(&format!("units {args}"), db, opts);
+                    }
                     continue;
                 }
+
                 let _ = rl.add_history_entry(line);
 
-                handle_input(line, db, opts);
+                if let Some(conv) = handle_input(line, db, opts) {
+                    last_conversion = Some(conv);
+                }
             }
             Err(ReadlineError::Interrupted) => continue, // Ctrl-C: clear line
             Err(ReadlineError::Eof) => break,            // Ctrl-D: exit
@@ -191,6 +247,11 @@ fn print_help(t: &Theme) {
             format!("{} {}", t.kw("const"), t.dim("<name>")),
             "show constant value",
         ),
+        (
+            "explain",
+            t.kw("explain"),
+            "show last conversion step-by-step",
+        ),
         ("info", t.kw("info"), "database & config info"),
         ("help", t.kw("help"), "this help"),
         ("quit", t.kw("quit"), "exit"),
@@ -246,31 +307,46 @@ fn print_info(t: &Theme, db: &UnitDatabase) {
     );
 }
 
-fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
+/// Dispatch a REPL line: conversion, help query, or bare quantity.
+///
+/// Returns `Some(result)` for successful conversions (used by `explain`
+/// to store the last conversion). Returns `None` for help queries,
+/// bare echoes, and errors.
+fn handle_input(
+    line: &str,
+    db: &UnitDatabase,
+    opts: &FormatOptions,
+) -> Option<convert::ConversionResult> {
     // 1. Delimiter-based input (check first, so "100 km/h -> ?" is caught).
     if let Some((source, target)) = parse_repl_line(line) {
         if target == "?" {
             handle_quantity_help(source, db, opts);
-        } else {
-            match convert::run_conversion(source, target, db) {
-                Ok(result) => println!("{}", format::format_result(&result, opts)),
-                Err(_) => {
-                    // Fallback: try source as a constant name (e.g., "c_0 to mph").
-                    if let Some(result) = try_constant_conversion(source, target, db) {
-                        match result {
-                            Ok(r) => println!("{}", format::format_result(&r, opts)),
-                            Err(e) => print_error(&e, opts),
+            return None;
+        }
+        match convert::run_conversion(source, target, db) {
+            Ok(result) => {
+                println!("{}", format::format_result(&result, opts));
+                return Some(result);
+            }
+            Err(_) => {
+                // Fallback: try source as a constant name (e.g., "c_0 to mph").
+                if let Some(result) = try_constant_conversion(source, target, db) {
+                    match result {
+                        Ok(r) => {
+                            println!("{}", format::format_result(&r, opts));
+                            return Some(r);
                         }
-                    } else {
-                        // Re-run to get the original error message.
-                        if let Err(e) = convert::run_conversion(source, target, db) {
-                            print_error(&e, opts);
-                        }
+                        Err(e) => print_error(&e, opts),
+                    }
+                } else {
+                    // Re-run to get the original error message.
+                    if let Err(e) = convert::run_conversion(source, target, db) {
+                        print_error(&e, opts);
                     }
                 }
             }
         }
-        return;
+        return None;
     }
 
     // 2. ? prefix/suffix: "? meter", "meter ?", "1 N ?"
@@ -280,10 +356,10 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
         let has_number = query.contains(|c: char| c.is_ascii_digit());
         if has_number && let Ok(qty) = parser::parse_quantity(query, db) {
             handle_quantity_help_from_qty(qty, db, opts);
-            return;
+            return None;
         }
         handle_unit_help(query, db, opts);
-        return;
+        return None;
     }
 
     // 3. No delimiter, no ? — try parsing as a bare quantity.
@@ -292,6 +368,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
         Ok(qty) => {
             let annotation = quantity_name(&qty.unit.dimensions);
             let result = convert::ConversionResult {
+                source: qty.clone(),
                 result: qty,
                 annotation,
             };
@@ -304,6 +381,7 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
                 let qty = crate::units::Quantity::new(c.value, c.unit.clone());
                 let annotation = quantity_name(&qty.unit.dimensions);
                 let result = convert::ConversionResult {
+                    source: qty.clone(),
                     result: qty,
                     annotation,
                 };
@@ -313,21 +391,45 @@ fn handle_input(line: &str, db: &UnitDatabase, opts: &FormatOptions) {
             }
         }
     }
+    None
 }
 
-/// Strip a command prefix (e.g., "const", "list") and return the trimmed argument.
-/// Returns `None` if the line doesn't start with the command followed by whitespace,
-/// or if the argument is empty.
-fn strip_command_arg<'a>(line: &'a str, command: &str) -> Option<&'a str> {
-    let rest = line
-        .strip_prefix(command)
-        .filter(|r| r.starts_with(' ') || r.starts_with('\t'))?;
-    let trimmed = rest.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
+/// Match a REPL command at the start of a line, returning its argument (possibly empty).
+///
+/// Returns `Some("")` if the line is exactly the command name, `Some(args)` if
+/// there's whitespace + trailing args, or `None` if the command doesn't match
+/// at all. This lets the caller decide how to handle empty vs non-empty args
+/// (some commands require args, others reject them).
+fn match_command<'a>(line: &'a str, command: &str) -> Option<&'a str> {
+    if line == command {
+        return Some("");
     }
+    let rest = line.strip_prefix(command)?;
+    if rest.starts_with(' ') || rest.starts_with('\t') {
+        Some(rest.trim())
+    } else {
+        None
+    }
+}
+
+/// Print a consistent "command takes no arguments" error for argless commands.
+fn print_extra_args_error(command: &str, args: &str, t: &Theme) {
+    eprintln!(
+        "{}",
+        t.err(&format!(
+            "Error: '{command}' takes no arguments (got '{args}')"
+        ))
+    );
+    eprintln!("  Usage: {command}");
+}
+
+/// Print a consistent "command requires an argument" error for arged commands.
+fn print_missing_arg_error(command: &str, usage: &str, t: &Theme) {
+    eprintln!(
+        "{}",
+        t.err(&format!("Error: '{command}' requires an argument"))
+    );
+    eprintln!("  Usage: {usage}");
 }
 
 /// Strip `?` from start or end, returning the remainder to look up.
@@ -389,6 +491,7 @@ fn handle_quantity_help_from_qty(
 ) {
     let annotation = quantity_name(&qty.unit.dimensions);
     let result = convert::ConversionResult {
+        source: qty.clone(),
         result: qty.clone(),
         annotation,
     };
@@ -429,10 +532,18 @@ fn try_constant_conversion(
         Err(e) => return Some(Err(e)),
     };
     let annotation = quantity_name(&result.unit.dimensions);
-    Some(Ok(convert::ConversionResult { result, annotation }))
+    Some(Ok(convert::ConversionResult {
+        source: qty,
+        result,
+        annotation,
+    }))
 }
 
 /// Handle `list <what> [filter]` — list units, dimensions, or constants.
+///
+/// Accepts unambiguous prefixes: `list u` → units, `list d` → dimensions, etc.
+/// Matches the tab-completion behavior in `helper.rs`, so users who hit Enter
+/// before Tab get the same resolution.
 fn handle_list_command(rest: &str, db: &UnitDatabase, opts: &FormatOptions) {
     let t = Theme::new(opts.color);
     let (what, filter) = match rest.split_once(|c: char| c.is_whitespace()) {
@@ -440,17 +551,63 @@ fn handle_list_command(rest: &str, db: &UnitDatabase, opts: &FormatOptions) {
         None => (rest.trim(), None),
     };
 
-    match what.to_lowercase().as_str() {
+    let Some(canonical) = resolve_list_subcommand(what) else {
+        eprintln!(
+            "{}",
+            t.err(&format!("Error: unknown list target: '{what}'"))
+        );
+        eprintln!("  Usage: list units|dimensions|constants [filter]");
+        return;
+    };
+
+    match canonical {
         "units" => handle_list_units(filter, db, opts),
-        "dimensions" | "quantities" => handle_list_dimensions(opts),
+        "dimensions" => handle_list_dimensions(opts),
         "constants" => handle_list_constants(opts),
-        _ => {
-            eprintln!(
-                "{}",
-                t.err(&format!("Error: unknown list target: '{what}'"))
-            );
-            eprintln!("  Usage: list units|dimensions|constants [filter]");
-        }
+        _ => unreachable!("resolve_list_subcommand only returns known canonicals"),
+    }
+}
+
+/// Resolve a (possibly abbreviated) `list` subcommand to its canonical form.
+///
+/// Case-insensitive. Accepts exact matches and unambiguous prefixes — the four
+/// valid inputs (units, dimensions, constants, quantities) have distinct first
+/// letters, so single-letter prefixes are unambiguous. `quantities` is an alias
+/// for `dimensions` (same listing).
+fn resolve_list_subcommand(what: &str) -> Option<&'static str> {
+    // (input, canonical-returned). Aliases map to the same canonical.
+    const ENTRIES: &[(&str, &str)] = &[
+        ("units", "units"),
+        ("dimensions", "dimensions"),
+        ("quantities", "dimensions"),
+        ("constants", "constants"),
+    ];
+    let lower = what.to_lowercase();
+    if lower.is_empty() {
+        return None;
+    }
+
+    // Exact match wins over prefix (so "constant" doesn't become ambiguous
+    // just because there are multiple words in the table).
+    if let Some(&(_, canonical)) = ENTRIES.iter().find(|(input, _)| *input == lower) {
+        return Some(canonical);
+    }
+
+    // Prefix match: must be unique across distinct canonicals.
+    let matches: Vec<&'static str> = ENTRIES
+        .iter()
+        .filter(|(input, _)| input.starts_with(&lower))
+        .map(|(_, canonical)| *canonical)
+        .collect();
+
+    // Collapse duplicates (e.g., if both "quantities" and "questions" existed
+    // and shared a canonical — not today, but defensive). Using a dedup pass
+    // rather than a HashSet to keep this alloc-free at call time.
+    let first = matches.first()?;
+    if matches.iter().all(|m| m == first) {
+        Some(*first)
+    } else {
+        None
     }
 }
 
@@ -675,5 +832,71 @@ mod tests {
         let (s, t) = parse_repl_line("100 km/h -> ?").unwrap();
         assert_eq!(s, "100 km/h");
         assert_eq!(t, "?");
+    }
+
+    // ---- match_command tests ----
+
+    #[test]
+    fn match_command_bare_matches_with_empty_args() {
+        assert_eq!(match_command("explain", "explain"), Some(""));
+        assert_eq!(match_command("info", "info"), Some(""));
+    }
+
+    #[test]
+    fn match_command_with_args() {
+        assert_eq!(match_command("const c_0", "const"), Some("c_0"));
+        assert_eq!(match_command("list units", "list"), Some("units"));
+    }
+
+    #[test]
+    fn match_command_trims_arg_whitespace() {
+        assert_eq!(match_command("const   c_0  ", "const"), Some("c_0"));
+    }
+
+    #[test]
+    fn match_command_rejects_prefix_without_boundary() {
+        // "explainer" is not "explain" followed by whitespace
+        assert_eq!(match_command("explainer", "explain"), None);
+        // "listing" is not "list" followed by whitespace
+        assert_eq!(match_command("listing", "list"), None);
+    }
+
+    #[test]
+    fn match_command_rejects_unrelated_line() {
+        assert_eq!(match_command("10 ft", "explain"), None);
+    }
+
+    // ---- resolve_list_subcommand tests ----
+
+    #[test]
+    fn resolve_list_subcommand_exact_matches() {
+        assert_eq!(resolve_list_subcommand("units"), Some("units"));
+        assert_eq!(resolve_list_subcommand("dimensions"), Some("dimensions"));
+        assert_eq!(resolve_list_subcommand("constants"), Some("constants"));
+    }
+
+    #[test]
+    fn resolve_list_subcommand_quantities_alias() {
+        assert_eq!(resolve_list_subcommand("quantities"), Some("dimensions"));
+    }
+
+    #[test]
+    fn resolve_list_subcommand_unique_single_letter_prefix() {
+        assert_eq!(resolve_list_subcommand("u"), Some("units"));
+        assert_eq!(resolve_list_subcommand("d"), Some("dimensions"));
+        assert_eq!(resolve_list_subcommand("c"), Some("constants"));
+        assert_eq!(resolve_list_subcommand("q"), Some("dimensions"));
+    }
+
+    #[test]
+    fn resolve_list_subcommand_case_insensitive() {
+        assert_eq!(resolve_list_subcommand("Units"), Some("units"));
+        assert_eq!(resolve_list_subcommand("DIM"), Some("dimensions"));
+    }
+
+    #[test]
+    fn resolve_list_subcommand_unknown_returns_none() {
+        assert_eq!(resolve_list_subcommand("foo"), None);
+        assert_eq!(resolve_list_subcommand(""), None);
     }
 }

@@ -16,11 +16,11 @@ Single source of truth for **status**, **next phases**, and the **feature catalo
 | 3 — Rich Conversions | ✅ Complete | ConversionKind enum (affine); temperature (C/F/K/Ra/Ré); SI prefixes (24) + binary (6); compound-unit grammar (`kg*m/s^2`); `--precision`/`--scientific`/`--to-base` flags; annotations registry; ~63 units + force/pressure/energy/power/historical/cooking/astronomical/radioactivity |
 | 4 — Interactive Experience | ✅ Complete | REPL (rustyline), dimension-based color theme (Flexoki-inspired), Fish-style hinter + syntax highlighter, dimension-aware tab-completion, `?` help with SI base/factor/prefix, `info` command, long/short/off banner, fuzzy suggestions (strsim), `--json`/`--pretty`/`--batch`, TOML config (`~/.config/runits/config.toml`), shell completions, `Unit.prefixable`, Theme carries color flag |
 | 4.5 — Codebase Reorganization | ✅ Complete | Split database/ (seed extraction), theme.rs (from format), repl/ (helper extraction); removed roadmap from rustdoc; CLAUDE.md hierarchy |
-| 5a — Expressions & Discovery | ⏳ Active | Physical constants, math expressions, unit arithmetic, `--explain`, dimensional error messages, conformable unit discovery |
+| 5a — Expressions & Discovery | ⏳ Active | Done: physical constants (15 CODATA values), conformable unit discovery (`list`/`search` commands + CLI subcommand), `--explain` flag + REPL `explain` command (unified linear/affine layout with standout calculation), unified REPL command dispatch with prefix-matching `list` subcommands. Remaining: math expressions in input, unit arithmetic (`5 m + 3 ft`), previous-result `_`, colored dimensional error messages |
 | 5b — Extensibility & UX | ⏳ Planned | User-defined units, unit-list decomposition, scale chaining, reverse lookup |
 | 5c — Database Expansion & Definition Format | ⏳ Planned | Numbat-inspired definition format, tiered loading (linear → recursive → nonlinear), domain modules (periodic table, astronomy), `--db` flag |
 
-**Test suite (latest):** 112 unit tests + 9 doc tests + 19 integration tests = 140 total, all passing. Dependencies: clap, clap_complete, pest, pest_derive, thiserror, owo-colors, rustyline, strsim, serde, toml (dev: assert_cmd, predicates). Clean clippy, clean fmt.
+**Test suite (latest):** 141 unit tests + 10 doc tests + 22 integration tests = 173 total, all passing. Dependencies: clap, clap_complete, pest, pest_derive, thiserror, owo-colors, rustyline, strsim, serde, toml (dev: assert_cmd, predicates). Clean clippy, clean fmt.
 
 For a detailed change history, see `git log`. For a feature-by-feature comparison with GNU Units, see [`docs/gnu-units-parity.md`](gnu-units-parity.md).
 

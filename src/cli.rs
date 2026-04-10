@@ -27,6 +27,10 @@ pub struct Cli {
     #[arg(long)]
     pub to_base: bool,
 
+    /// Show step-by-step conversion chain with factors and intermediate values
+    #[arg(long)]
+    pub explain: bool,
+
     /// Use Unicode symbols in output (kg·m/s² instead of kg*m/s^2)
     #[arg(long)]
     pub pretty: bool,
