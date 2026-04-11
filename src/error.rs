@@ -3,6 +3,14 @@
 //! All fallible public APIs return `Result<_, RUnitsError>`. The enum covers
 //! every failure mode the user might hit: an unknown unit name, incompatible
 //! dimensions during conversion, or a malformed input string.
+//!
+//! ## Expression-evaluation variants (Phase 5a)
+//!
+//! Several variants carry *structured* context (both dim strings, both unit
+//! names, the operator character) rather than pre-formatted strings. The
+//! follow-up colored-errors step (next phase 5a item) will render them with
+//! per-dimension colors; until then, the Display impls produce plain text
+//! that matches the existing error style.
 
 use thiserror::Error;
 
@@ -15,6 +23,10 @@ use thiserror::Error;
 pub enum RUnitsError {
     /// The parser couldn't resolve a unit name against the database.
     /// Carries fuzzy suggestions when available.
+    ///
+    /// Fired from the **target-side** unit parser (`parse_unit_name`). The
+    /// source-side expression evaluator uses [`UnknownIdentifier`] instead,
+    /// since it tries both the unit *and* constant databases before giving up.
     #[error("{}", format_unknown_unit(.name, .suggestions))]
     UnknownUnit {
         name: String,
@@ -32,10 +44,77 @@ pub enum RUnitsError {
     },
 
     /// Affine units (e.g., temperature scales) cannot form compound units.
+    ///
+    /// Fired during *unit composition* (e.g. `celsius*m` at parse time).
+    /// The sibling variant [`AffineInExpression`] fires during *quantity
+    /// evaluation* (e.g. `20 celsius + 5 celsius`). Kept separate so the
+    /// follow-up colored-errors step can render a temperature-specific hint
+    /// for the expression case without affecting the composition-path
+    /// messaging.
     #[error(
         "cannot compose affine unit '{0}' in multiplication/division (temperature units cannot form compound units)"
     )]
     AffineComposition(String),
+
+    /// Affine unit used in an expression-level operation (+ - * / ^, or a
+    /// math function). Carries the offending unit name plus a short string
+    /// describing the operator context (e.g. `"+"`, `"sqrt"`, `"^"`).
+    #[error(
+        "cannot use affine unit '{unit}' with '{op_context}': temperature units cannot be used in arithmetic expressions (use kelvin for temperature deltas)"
+    )]
+    AffineInExpression { unit: String, op_context: String },
+
+    /// `lhs + rhs` or `lhs - rhs` where the two operands have different
+    /// dimensions. Carries both unit names AND both dimension strings so the
+    /// colored-errors step can highlight each in its dimension color.
+    #[error(
+        "cannot {} '{lhs_unit}' and '{rhs_unit}': incompatible dimensions ({lhs_dim} vs {rhs_dim})",
+        match .op { '+' => "add", '-' => "subtract", _ => "combine" }
+    )]
+    IncompatibleAddition {
+        op: char,
+        lhs_unit: String,
+        rhs_unit: String,
+        lhs_dim: String,
+        rhs_dim: String,
+    },
+
+    /// An identifier in an expression couldn't be resolved against either
+    /// the unit database or the constants database. Carries fuzzy suggestions
+    /// merged from both pools.
+    #[error("{}", format_unknown_identifier(.name, .suggestions))]
+    UnknownIdentifier {
+        name: String,
+        suggestions: Vec<String>,
+    },
+
+    /// A function call named a function that doesn't exist in the math
+    /// registry. Carries fuzzy suggestions from `MathFn::ALL`.
+    #[error("{}", format_unknown_function(.name, .suggestions))]
+    UnknownFunction {
+        name: String,
+        suggestions: Vec<String>,
+    },
+
+    /// A function call passed the wrong number of arguments.
+    #[error("function '{name}' expects {expected} argument(s), got {got}")]
+    ArityMismatch {
+        name: &'static str,
+        expected: usize,
+        got: usize,
+    },
+
+    /// A math function rejected its argument for a domain-specific reason
+    /// (e.g. `sqrt` of a negative number, `sin` of a dimensioned quantity,
+    /// `sqrt` of a dimension with an odd exponent).
+    #[error("function '{name}': {reason}")]
+    FunctionDomainError { name: &'static str, reason: String },
+
+    /// The previous-result variable `_` was used before any successful
+    /// evaluation in the current REPL session (or in a context where no
+    /// previous result is available, such as one-shot CLI mode).
+    #[error("no previous result: '_' has no value yet (evaluate an expression first)")]
+    PreviousResultUnavailable,
 
     /// Input didn't match the quantity grammar. The inner pest error
     /// carries a source-span pointer for precise user feedback. Boxed so
@@ -50,6 +129,28 @@ fn format_unknown_unit(name: &str, suggestions: &[String]) -> String {
     } else {
         format!(
             "unknown unit: '{name}'. Did you mean: {}?",
+            suggestions.join(", ")
+        )
+    }
+}
+
+fn format_unknown_identifier(name: &str, suggestions: &[String]) -> String {
+    if suggestions.is_empty() {
+        format!("unknown identifier: '{name}'")
+    } else {
+        format!(
+            "unknown identifier: '{name}'. Did you mean: {}?",
+            suggestions.join(", ")
+        )
+    }
+}
+
+fn format_unknown_function(name: &str, suggestions: &[String]) -> String {
+    if suggestions.is_empty() {
+        format!("unknown function: '{name}'")
+    } else {
+        format!(
+            "unknown function: '{name}'. Did you mean: {}?",
             suggestions.join(", ")
         )
     }

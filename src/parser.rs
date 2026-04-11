@@ -1,17 +1,23 @@
-//! Pest-backed parser with compound-unit expression support.
+//! Pest-backed parser with full source-side expression support.
 //!
 //! Two public entry points:
 //!
-//! - [`parse_quantity`] turns `"10 kg*m/s^2"` into a [`Quantity`] by extracting
-//!   the number and recursively resolving the unit expression tree.
-//! - [`parse_unit_name`] takes a bare unit expression like `"m/s"` or `"kg*m/s^2"`
-//!   and resolves it to a composed [`Unit`].
+//! - [`parse_quantity`] turns a user input like `"10 kg*m/s^2"`, `"5 m + 3 ft"`,
+//!   or `"sqrt(9 m^2)"` into a [`Quantity`] by parsing it into an [`Expr`]
+//!   AST and evaluating under a default [`EvalContext`]. This is a thin
+//!   wrapper around [`parse_and_eval`].
+//! - [`parse_unit_name`] takes a bare unit expression like `"m/s"` or
+//!   `"kg*m/s^2"` and resolves it to a composed [`Unit`]. Target-side
+//!   parsing stays pure — no math, no identifiers beyond unit names.
 //!
-//! Grammar lives in [`grammar.pest`](../grammar.pest). The expression grammar
-//! handles `*`, `/`, `^`, parentheses, and implicit multiplication (juxtaposition).
+//! Grammar lives in [`grammar.pest`](../grammar.pest). Expression grammar
+//! is documented there; the AST walker lives in [`crate::expr`] and the
+//! tree walker / evaluator lives in [`crate::eval`].
 
 use crate::database::UnitDatabase;
 use crate::error::RUnitsError;
+use crate::eval::{EvalContext, eval};
+use crate::expr::parse_expression;
 use crate::units::{Quantity, Unit};
 use pest::Parser;
 use pest::iterators::Pair;
@@ -20,39 +26,27 @@ use pest::iterators::Pair;
 #[grammar = "grammar.pest"]
 pub struct QuantityParser;
 
-/// Parse a full quantity string (e.g. `"10 ft"`, `"5 kg*m/s^2"`).
+/// Parse a full quantity string and evaluate it under a default context.
 ///
-/// Returns [`RUnitsError::UnknownUnit`] if a unit name isn't in the
-/// database, or [`RUnitsError::Parse`] if the input doesn't match the
-/// grammar.
+/// Equivalent to `parse_and_eval(input, &EvalContext::one_shot(db))`. Used by
+/// the CLI one-shot and batch paths, which don't have a REPL `previous`.
 pub fn parse_quantity(input: &str, db: &UnitDatabase) -> Result<Quantity, RUnitsError> {
-    let mut pairs = QuantityParser::parse(Rule::quantity, input.trim()).map_err(Box::new)?;
-    let quantity_pair = pairs.next().expect("grammar guarantees one quantity");
-    let mut inner = quantity_pair.into_inner();
+    parse_and_eval(input, &EvalContext::one_shot(db))
+}
 
-    let first = inner.next().expect("grammar guarantees at least unit_expr");
-    let (value, unit) = match first.as_rule() {
-        Rule::number => {
-            let v: f64 = first
-                .as_str()
-                .parse()
-                .expect("grammar validated number format");
-            let unit_pair = inner
-                .next()
-                .expect("grammar guarantees unit_expr after number");
-            (v, resolve_unit_expr(unit_pair, db)?)
-        }
-        Rule::unit_expr => (1.0, resolve_unit_expr(first, db)?),
-        other => unreachable!("unexpected rule inside quantity: {:?}", other),
-    };
-
-    Ok(Quantity::new(value, unit))
+/// Parse an expression and evaluate it under a caller-provided context.
+///
+/// The REPL uses this to supply a `previous` quantity for the `_` variable.
+pub fn parse_and_eval(input: &str, ctx: &EvalContext) -> Result<Quantity, RUnitsError> {
+    let expr = parse_expression(input)?;
+    eval(&expr, ctx)
 }
 
 /// Parse a bare unit expression (e.g. `"m/s"`, `"kg*m/s^2"`).
 ///
-/// Returns [`RUnitsError::UnknownUnit`] if a name isn't in the database
-/// or [`RUnitsError::Parse`] if the input doesn't match the grammar.
+/// Target-side parser — no math, no identifiers beyond unit names. Returns
+/// [`RUnitsError::UnknownUnit`] if a name isn't in the database or
+/// [`RUnitsError::Parse`] if the input doesn't match the grammar.
 pub fn parse_unit_name(input: &str, db: &UnitDatabase) -> Result<Unit, RUnitsError> {
     let mut pairs = QuantityParser::parse(Rule::unit_only, input.trim()).map_err(Box::new)?;
     let unit_only_pair = pairs.next().expect("grammar guarantees one unit_only");
@@ -66,11 +60,11 @@ pub fn parse_unit_name(input: &str, db: &UnitDatabase) -> Result<Unit, RUnitsErr
 /// Recursively resolve a pest `unit_expr` parse tree into a composed [`Unit`].
 ///
 /// Walks the tree according to operator precedence:
-/// - `unit_expr`: fold terms with division
-/// - `term`: fold factors with multiplication
-/// - `factor`: resolve atom, then apply exponentiation
-/// - `atom`: DB lookup for unit_name, or recurse into parenthesized expr
-fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnitsError> {
+/// - `unit_expr`: fold `unit_term`s with division
+/// - `unit_term`: fold `unit_factor`s with multiplication
+/// - `unit_factor`: resolve `unit_atom`, then apply exponentiation
+/// - `unit_atom`: DB lookup for `unit_name`, or recurse into parenthesized expr
+pub(crate) fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnitsError> {
     match pair.as_rule() {
         Rule::unit_expr => {
             let mut inner = pair.into_inner();
@@ -82,7 +76,7 @@ fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnits
             }
             Ok(result)
         }
-        Rule::term => {
+        Rule::unit_term => {
             let mut inner = pair.into_inner();
             let mut result = resolve_unit_expr(inner.next().unwrap(), db)?;
             for factor in inner {
@@ -92,7 +86,7 @@ fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnits
             }
             Ok(result)
         }
-        Rule::factor => {
+        Rule::unit_factor => {
             let mut inner = pair.into_inner();
             let base = resolve_unit_expr(inner.next().unwrap(), db)?;
             if let Some(exp_pair) = inner.next() {
@@ -103,12 +97,12 @@ fn resolve_unit_expr(pair: Pair<Rule>, db: &UnitDatabase) -> Result<Unit, RUnits
                 if base.is_affine() {
                     return Err(RUnitsError::AffineComposition(base.name.clone()));
                 }
-                Ok(pow_unit(base, exp))
+                Ok(crate::units::unit::pow_unit(base, exp))
             } else {
                 Ok(base)
             }
         }
-        Rule::atom => {
+        Rule::unit_atom => {
             let inner = pair.into_inner().next().unwrap();
             resolve_unit_expr(inner, db)
         }
@@ -132,28 +126,6 @@ fn check_affine_composition(lhs: &Unit, rhs: &Unit) -> Result<(), RUnitsError> {
         return Err(RUnitsError::AffineComposition(rhs.name.clone()));
     }
     Ok(())
-}
-
-/// Raise a unit to an integer power.
-///
-/// Positive exponents use repeated multiplication; negative exponents
-/// invert first (dimensionless / unit), then multiply.
-fn pow_unit(unit: Unit, exp: i32) -> Unit {
-    if exp == 0 {
-        return Unit::dimensionless();
-    }
-    if exp == 1 {
-        return unit;
-    }
-    if exp < 0 {
-        let inv = Unit::dimensionless() / unit;
-        return pow_unit(inv, -exp);
-    }
-    let mut result = unit.clone();
-    for _ in 1..exp {
-        result = result * unit.clone();
-    }
-    result
 }
 
 #[cfg(test)]
@@ -248,22 +220,31 @@ mod tests {
     fn rejects_unknown_unit() {
         let db = UnitDatabase::new();
         let err = parse_quantity("10 foozle", &db).unwrap_err();
-        assert!(matches!(err, RUnitsError::UnknownUnit { .. }));
+        // Source-side parser uses UnknownIdentifier (looks up units AND
+        // constants); the distinction is intentional — see error.rs docs.
+        assert!(matches!(err, RUnitsError::UnknownIdentifier { .. }));
         assert!(err.to_string().contains("foozle"));
     }
 
     #[test]
     fn rejects_bad_syntax() {
         let db = UnitDatabase::new();
-        let err = parse_quantity("meter 10", &db).unwrap_err();
+        // `meter 10` parses as `meter * 10` (juxtaposition) now, so the
+        // previous "meter 10 is invalid" expectation no longer holds. Use a
+        // clearly malformed input instead.
+        let err = parse_quantity("10 @ meter", &db).unwrap_err();
         assert!(matches!(err, RUnitsError::Parse(_)));
     }
 
     #[test]
-    fn rejects_missing_unit() {
+    fn parses_bare_number() {
         let db = UnitDatabase::new();
-        let err = parse_quantity("10", &db).unwrap_err();
-        assert!(matches!(err, RUnitsError::Parse(_)));
+        // With full expression support, `10` is a valid dimensionless scalar.
+        // The old "bare number" rejection no longer makes sense at the parser
+        // level — it fails later at `convert_to` for dimension mismatch.
+        let q = parse_quantity("10", &db).unwrap();
+        assert_eq!(q.value, 10.0);
+        assert!(q.unit.dimensions.is_empty());
     }
 
     #[test]
@@ -351,5 +332,37 @@ mod tests {
         let db = UnitDatabase::new();
         let u = parse_unit_name("m^0", &db).unwrap();
         assert!(u.dimensions.is_empty());
+    }
+
+    // ---- New Phase 5a expression tests ----
+
+    #[test]
+    fn parses_negative_scientific() {
+        let db = UnitDatabase::new();
+        let q = parse_quantity("-2e-3 m", &db).unwrap();
+        assert!((q.value + 2e-3).abs() < 1e-12);
+        assert_eq!(q.unit.name, "meter");
+    }
+
+    #[test]
+    fn parses_double_negation() {
+        let db = UnitDatabase::new();
+        let q = parse_quantity("-(-2 m)", &db).unwrap();
+        assert!((q.value - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parses_func_call_in_expression() {
+        let db = UnitDatabase::new();
+        let q = parse_quantity("sin(0) m", &db).unwrap();
+        assert!(q.value.abs() < 1e-12);
+    }
+
+    #[test]
+    fn underscore_prefix_is_not_a_partial_parse() {
+        let db = UnitDatabase::new();
+        let err = parse_quantity("_foo m", &db).unwrap_err();
+        // Must be a clean parse error, not a silent partial-`_` success.
+        assert!(matches!(err, RUnitsError::Parse(_)));
     }
 }

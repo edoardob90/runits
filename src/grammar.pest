@@ -1,39 +1,113 @@
-// Phase 3 pest grammar: compound-unit expressions with operator precedence.
+// Pest grammar: full source-side expressions + target-side unit expressions.
 //
-// Supports inputs like "10 kg*m/s^2", "100 km/h", "5 (kg*m)/s^2", "meter".
-// The number prefix is optional — "mile" alone means "1 mile".
+// Two top-level entry points:
 //
-// Operator precedence (highest to lowest):
-//   1. Exponentiation: s^2, m^-1
-//   2. Multiplication: kg*m
-//   3. Division: m/s, kg*m/s^2
+//   * `expression` — source side. A user input like `5 m + 3 ft`, `3*4 meter`,
+//     `sqrt(9 m^2)`, `c_0 * 1 s`, `2^10 byte`. Evaluates to a Quantity via
+//     the AST walker in `src/expr.rs` and the tree walker in `src/eval.rs`.
+//
+//   * `unit_only`  — target side. A bare unit expression like `m/s`,
+//     `kg*m/s^2`, `(kg*m)/s^2`. No math, no function calls, no identifiers
+//     other than unit names. Walked by `resolve_unit_expr` in `src/parser.rs`.
+//
+// Keeping them separate means conversion targets cannot accidentally be
+// expressions (e.g. `runits "5 m" "2 m + 3 m"` stays a clean error, not a
+// confusing "target evaluates to 5 m" surprise).
 //
 // Top-level rules are non-atomic, so whitespace between tokens is implicit
 // (zero or more spaces/tabs are consumed automatically by pest).
 
 // ---- Top-level rules --------------------------------------------------------
 
-// A full quantity: "10 meter", "5 kg*m/s^2", "mile".
-quantity = { SOI ~ number? ~ unit_expr ~ EOI }
+// A full source-side expression yielding a Quantity.
+expression = { SOI ~ add_expr ~ EOI }
 
 // A bare unit expression for the CLI target argument: "m/s", "kg*m/s^2".
 unit_only = { SOI ~ unit_expr ~ EOI }
 
-// ---- Unit expression grammar ------------------------------------------------
+// ---- Expression grammar (source side) ---------------------------------------
+//
+// Precedence (loosest → tightest):
+//   add_expr → div_expr (("+" | "-") div_expr)*
+//   div_expr → mul_expr ("/" mul_expr)*
+//   mul_expr → pow_expr (("*" pow_expr) | pow_expr)*     // juxtaposition
+//   pow_expr → unary_atom ("^" integer)?
+//   unary_atom → ("-"|"+")? atom
+//   atom → number | func_call | paren_expr | previous | ident_atom
+//
+// `/` binds looser than `*` (GNU-Units convention): `kg/m*s` = `kg / (m*s)`.
+// `*` supports implicit juxtaposition so `10 m` means `10 * m` and `3*4 m`
+// means `(3*4) * m`.
+// `^` RHS is integer-only (matches the current target-side grammar); the
+// `sqrt` function covers the half-integer case.
 
+add_expr = { div_expr ~ (add_op ~ div_expr)* }
+add_op   = { "+" | "-" }
+
+div_expr = { mul_expr ~ ("/" ~ mul_expr)* }
+
+// `*` explicitly multiplies pow_expr (which allows a leading unary sign —
+// so `3 * -4` works). Juxtaposed items use `pow_nosign`, which rejects
+// leading `+`/`-`. This is load-bearing: without the restriction,
+// `5 m + 3 ft` would juxtapose `+3` as unary-plus inside the multiplication
+// chain, producing `((5*m) * (+3)) * ft` and eating the `+` that the
+// add_expr layer needs to see. The add/sub operators must "bubble up" past
+// mul_expr; restricting juxtaposition to the no-sign atom is how we make
+// that bubble-up possible.
+mul_expr = { pow_expr ~ (("*" ~ pow_expr) | pow_nosign)* }
+
+// Leading pow_expr in a mul chain — allows unary prefix so expressions can
+// start with `-5 m`, `-(-2 m)`, etc.
+pow_expr = { unary_atom ~ ("^" ~ integer)? }
+
+// Juxtaposed pow: no leading sign. Same precedence as `pow_expr` for the
+// exponent, different only in that the base is a bare atom.
+pow_nosign = { atom_expr ~ ("^" ~ integer)? }
+
+unary_atom = { unary_op? ~ atom_expr }
+unary_op   = { "-" | "+" }
+
+atom_expr = _{ number | func_call | paren_expr | previous | ident_atom }
+
+func_call  = { ident ~ "(" ~ arg_list? ~ ")" }
+arg_list   = { add_expr ~ ("," ~ add_expr)* }
+paren_expr = { "(" ~ add_expr ~ ")" }
+
+// Matches the literal `_` as the previous-result variable, but ONLY when the
+// next character is not an ident-continuation char. The negative lookahead
+// `!(...)` is load-bearing: without it, input like `_foo` would match `"_"`
+// as `previous` and leave `foo` to fail somewhere upstream with a confusing
+// partial-parse trace. With the lookahead, `_foo` fails the `previous`
+// alternative cleanly and falls through to `ident_atom` — which also refuses
+// leading `_`, so the user gets a clean "unknown identifier" error rather
+// than a pest parse trace. Atomic (`@`) so no implicit whitespace is inserted
+// between `"_"` and the lookahead; `_` is the whole token or nothing. This
+// pattern will recur in Phase 5c when we parse Numbat-style definition files —
+// any reserved identifier whose name is a prefix of a longer legal identifier
+// needs the same treatment.
+previous   = @{ "_" ~ !(ASCII_ALPHANUMERIC | "_") }
+ident_atom = { ident }
+
+// Identifier used as a value (unit name, constant name, or function name).
+// Starts with a letter, µ, or °; no leading `_` — that's reserved for the
+// previous-result variable.
+ident = @{ (ASCII_ALPHA | "µ" | "°") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// ---- Unit expression grammar (target side, unchanged) ----------------------
+//
 // Division binds looser than multiplication:
-//   unit_expr → term ("/" term)*
-//   term      → factor ("*" factor | factor)*
-//   factor    → atom ("^" integer)?
-//   atom      → unit_name | "(" unit_expr ")"
+//   unit_expr → unit_term ("/" unit_term)*
+//   unit_term → unit_factor ("*" unit_factor | unit_factor)*
+//   unit_factor → unit_atom ("^" integer)?
+//   unit_atom → unit_name | "(" unit_expr ")"
 //
 // Implicit multiplication (juxtaposition): "kg m" = "kg*m".
-// This is achieved by `term → factor (("*" ~ factor) | factor)*`
-// where the second alternative handles juxtaposition.
-unit_expr = { term ~ ("/" ~ term)* }
-term      = { factor ~ (("*" ~ factor) | factor)* }
-factor    = { atom ~ ("^" ~ integer)? }
-atom      = { unit_name | "(" ~ unit_expr ~ ")" }
+// Rules are prefixed `unit_` to avoid name collisions with the source-side
+// grammar above.
+unit_expr   = { unit_term ~ ("/" ~ unit_term)* }
+unit_term   = { unit_factor ~ (("*" ~ unit_factor) | unit_factor)* }
+unit_factor = { unit_atom ~ ("^" ~ integer)? }
+unit_atom   = { unit_name | "(" ~ unit_expr ~ ")" }
 
 // Integer exponent (positive or negative): 2, -1, 3
 integer = @{ "-"? ~ ASCII_DIGIT+ }
@@ -46,11 +120,14 @@ unit_name = @{
     (ASCII_ALPHA | "µ" | "°") ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
-// Signed decimal with optional fractional part and optional scientific
-// exponent. Examples: 10, -3.14, 6.022e23, 9.81E-2.
+// Unsigned decimal with optional fractional part and optional scientific
+// exponent. Examples: 10, 3.14, 6.022e23, 9.81E-2.
+//
+// Note: no leading `-`. Negation is handled by `unary_atom` at the expression
+// level, which avoids ambiguity between `-3` as a number token vs `-` + `3`
+// at the expression level.
 number = @{
-    "-"?
-    ~ ASCII_DIGIT+
+    ASCII_DIGIT+
     ~ ("." ~ ASCII_DIGIT+)?
     ~ (^"e" ~ "-"? ~ ASCII_DIGIT+)?
 }
