@@ -322,6 +322,49 @@ pub fn format_explain(result: &ConversionResult, opts: &FormatOptions) -> String
         ann_str,
     ));
 
+    // Conditional "expression" row for --explain (Phase 5a).
+    //
+    // Rule: emit the row only when the user's input actually contained
+    // expression-level arithmetic — `+`, binary `-`, parentheses, commas,
+    // or the `_` previous-result variable. A bare "<number> <unit>" form
+    // like `10 ft` (even when the alias differs from the canonical unit
+    // name) is redundant with the `source:` row below and would be noise.
+    // Compound unit inputs like `kg*m/s^2` are *not* treated as expressions
+    // because their shape is indistinguishable from a multiplicative unit
+    // name — the `source:` row already renders them correctly.
+    //
+    // The heuristic is intentionally simple: a character scan on the
+    // trimmed input. It has three false negatives (`3*4 m`, `2^10 byte`,
+    // explicit scalar×scalar products) where the user did do math but we
+    // don't emit the row. That's an acceptable trade-off — the `source:`
+    // row already shows the computed value (`12 meter`, `1024 byte`), so
+    // the information isn't lost; the user just has to read one line to
+    // get both numbers. When the heuristic proves too coarse in practice,
+    // tighten it by parsing `expr` with `crate::expr::parse_expression`
+    // and inspecting the AST shape.
+    //
+    // **Glyph substitution deferred.** The expression string is echoed
+    // verbatim — no `->` → `→`, no `*` → `×`. This step's `--explain`
+    // already uses `Glyphs::pick` elsewhere for the arrows and operators
+    // it emits directly; the user's raw expression is intentionally left
+    // alone because rewriting their input feels wrong. If polish later
+    // wants to normalize glyphs, do it in a dedicated pass; don't bundle
+    // it here.
+    if let Some(expr) = &result.source_expr {
+        let trimmed = expr.trim();
+        // Note: `_` isn't checked — some unit names embed it (`pound_force`).
+        let has_arithmetic = trimmed.contains('+')
+            || trimmed.contains('(')
+            || trimmed.contains(')')
+            || trimmed.contains(',')
+            // Binary `-` anywhere past the first character counts as math;
+            // a leading `-` is just a negative literal like `-5 m`.
+            || trimmed.chars().skip(1).any(|c| c == '-');
+        if has_arithmetic {
+            lines.push(format!("  {}  {}", t.dim("expression:"), trimmed));
+        }
+    }
+
     // Formula section: how each side relates to base (labels `source:` / `target:`).
     if !source_is_base {
         lines.push(format!("  {}  {}", t.dim("source:"), formula(&source.unit)));

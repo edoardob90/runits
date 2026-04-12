@@ -422,6 +422,33 @@ impl PartialEq for Unit {
     }
 }
 
+/// Raise a unit to an integer power.
+///
+/// Positive exponents use repeated multiplication; negative exponents
+/// invert first (dimensionless / unit), then multiply. Zero returns the
+/// dimensionless identity. Shared between the target-side unit parser
+/// (`unit_factor`) and the source-side quantity evaluator (`Quantity::pow_i32`).
+///
+/// Callers are responsible for rejecting affine units — `pow_unit` will
+/// panic via the `debug_assert!` in `Mul`/`Div` if handed one.
+pub(crate) fn pow_unit(unit: Unit, exp: i32) -> Unit {
+    if exp == 0 {
+        return Unit::dimensionless();
+    }
+    if exp == 1 {
+        return unit;
+    }
+    if exp < 0 {
+        let inv = Unit::dimensionless() / unit;
+        return pow_unit(inv, -exp);
+    }
+    let mut result = unit.clone();
+    for _ in 1..exp {
+        result = result * unit.clone();
+    }
+    result
+}
+
 // Implement multiplication for units: meter * second
 // Affine units (temperature) must not be composed — the parser rejects them
 // before reaching here, but the debug_assert catches programming errors.

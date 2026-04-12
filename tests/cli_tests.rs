@@ -131,13 +131,17 @@ fn incompatible_dimensions_fails_with_helpful_message() {
 
 #[test]
 fn unknown_source_unit_fails() {
+    // Source-side unknown names now route through the expression evaluator,
+    // which tries both units AND constants — so the error is
+    // `unknown identifier`, not `unknown unit`. The suggestion fallback
+    // (Phase 5a) merges suggestions from both databases.
     runits()
         .arg("10 foozle")
         .arg("m")
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("unknown unit"))
+        .stderr(predicate::str::contains("unknown identifier"))
         .stderr(predicate::str::contains("foozle"));
 }
 
@@ -165,17 +169,17 @@ fn typo_suggests_correction() {
 }
 
 #[test]
-fn bare_number_without_unit_fails_with_parse_error() {
-    // "10" alone fails the grammar: either it's a number that needs a
-    // following unit_name (missing whitespace+unit), or it's a unit_name
-    // that must start with a letter. Neither branch matches → parse error.
+fn bare_number_is_dimensionless_not_a_length() {
+    // Phase 5a: `10` alone is now a valid dimensionless expression. The
+    // failure mode shifted from "parse error" to "incompatible dimensions":
+    // you can't convert a pure number to meters.
     runits()
         .arg("10")
         .arg("m")
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("parse error"));
+        .stderr(predicate::str::contains("incompatible dimensions"));
 }
 
 #[test]
@@ -276,4 +280,207 @@ fn explain_affine_temperature_harmonized_labels() {
         .stdout(predicate::str::contains("to base:").not())
         .stdout(predicate::str::contains("from base:").not())
         .stdout(predicate::str::contains("37"));
+}
+
+// ---- Expression foundation (Phase 5a) ----
+
+#[test]
+fn expression_implicit_multiplication() {
+    // `3*4 m` → 12 m → ~39.37 ft
+    runits()
+        .arg("3*4 meter")
+        .arg("foot")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("39.3"));
+}
+
+#[test]
+fn expression_pow_then_juxtapose() {
+    // `2^10 byte` → 1024 byte → 1.024 kB
+    runits()
+        .arg("2^10 byte")
+        .arg("kB")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1.024"));
+}
+
+#[test]
+fn expression_addition_same_dim() {
+    // `5 m + 3 ft` → 5.9144 m → 591.44 cm
+    runits()
+        .arg("5 m + 3 ft")
+        .arg("cm")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("591.4"));
+}
+
+#[test]
+fn expression_addition_incompatible() {
+    runits()
+        .arg("5 m + 3 s")
+        .arg("cm")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Length"))
+        .stderr(predicate::str::contains("Time"));
+}
+
+#[test]
+fn expression_constant_arithmetic() {
+    // `2 * c_0 * 1 s` ≈ 599584.916 km
+    runits()
+        .arg("2 * c_0 * 1 s")
+        .arg("km")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("599584").or(predicate::str::contains("599585")));
+}
+
+#[test]
+fn expression_sqrt_dim_transform() {
+    // `sqrt(9 m^2)` → 3 m → 300 cm
+    runits()
+        .arg("sqrt(9 m^2)")
+        .arg("cm")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("300"));
+}
+
+#[test]
+fn expression_sqrt_odd_exponent_fails() {
+    runits()
+        .arg("sqrt(9 m)")
+        .arg("cm")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("sqrt"));
+}
+
+#[test]
+fn expression_sin_scalar_ok() {
+    // `sin(0) m` → 0 m → 0 cm
+    runits()
+        .arg("sin(0) m")
+        .arg("cm")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0"));
+}
+
+#[test]
+fn expression_sin_dimensioned_fails() {
+    runits()
+        .arg("sin(5 m)")
+        .arg("cm")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("sin"));
+}
+
+#[test]
+fn expression_unknown_function_suggests() {
+    runits()
+        .arg("sxrt(9 m^2)")
+        .arg("cm")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("sqrt"));
+}
+
+#[test]
+fn expression_negation() {
+    // `--` separates flags from positionals so clap doesn't interpret `-5`
+    // as a short flag.
+    runits()
+        .arg("--")
+        .arg("-5 m")
+        .arg("cm")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-500"));
+}
+
+#[test]
+fn expression_affine_addition_fails() {
+    runits()
+        .arg("20 celsius + 5 celsius")
+        .arg("K")
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("celsius"));
+}
+
+#[test]
+fn expression_underscore_prefix_fails_cleanly() {
+    // `_foo` must not be a partial `_` + dangling `foo` — it should fail
+    // the grammar at the parser level.
+    runits().arg("_foo m").arg("cm").assert().failure().code(1);
+}
+
+#[test]
+fn explain_preserves_expression_source() {
+    // --explain on a non-trivial expression should echo the original input
+    // on an `expression:` line.
+    runits()
+        .arg("--explain")
+        .arg("5 m + 3 ft")
+        .arg("cm")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("expression:"))
+        .stdout(predicate::str::contains("5 m + 3 ft"));
+}
+
+#[test]
+fn explain_trivial_conversion_skips_expression_row() {
+    // A simple `10 ft` should NOT get an "expression:" row — the source
+    // row already shows "10 foot" which is the same information.
+    runits()
+        .arg("--explain")
+        .arg("10 ft")
+        .arg("m")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("expression:").not());
+}
+
+// ---- REPL previous-result chain ----
+
+#[test]
+fn repl_previous_result_chain() {
+    // Feed a three-line REPL session: establish a quantity, use `_` to
+    // double it, then convert via `_ to km`. Assert that the printed
+    // values form the expected sequence.
+    let mut cmd = runits();
+    cmd.env("NO_COLOR", "1")
+        .env_remove("CLICOLOR")
+        .arg("--intro-banner")
+        .arg("off")
+        .write_stdin("5 m + 3 ft\n_ * 2\n_ to km\nquit\n")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("5.9144"))
+        .stdout(predicate::str::contains("11.8288"))
+        .stdout(predicate::str::contains("0.0118288"));
+}
+
+#[test]
+fn repl_previous_unavailable_errors_cleanly() {
+    let mut cmd = runits();
+    cmd.env("NO_COLOR", "1")
+        .arg("--intro-banner")
+        .arg("off")
+        .write_stdin("_ + 5 m\nquit\n")
+        .assert()
+        .success() // REPL doesn't exit on error, it prints and continues
+        .stderr(predicate::str::contains("no previous result"));
 }

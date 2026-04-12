@@ -53,6 +53,35 @@ impl ConstantsDatabase {
         self.constants.keys().map(|s| s.as_str())
     }
 
+    /// Suggest the closest known constant names for a misspelled input.
+    ///
+    /// Mirrors `UnitDatabase::suggest`: Jaro-Winkler with a 0.7 cutoff,
+    /// deduplicated by canonical constant name. Used by the expression
+    /// evaluator's `UnknownIdentifier` error path.
+    pub fn suggest(&self, unknown: &str, max: usize) -> Vec<String> {
+        use std::collections::HashSet;
+
+        let unknown_lower = unknown.to_lowercase();
+        let mut scored: Vec<_> = self
+            .constants
+            .iter()
+            .map(|(alias, constant)| {
+                let score = strsim::jaro_winkler(&unknown_lower, &alias.to_lowercase());
+                (alias.as_str(), constant.name, score)
+            })
+            .filter(|(_, _, score)| *score > 0.7)
+            .collect();
+        scored.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap());
+
+        let mut seen = HashSet::new();
+        scored
+            .into_iter()
+            .filter(|(_, canonical, _)| seen.insert(*canonical))
+            .take(max)
+            .map(|(alias, _, _)| alias.to_string())
+            .collect()
+    }
+
     /// Return all unique constants (deduplicated by canonical name).
     pub fn all_unique(&self) -> Vec<&Constant> {
         use std::collections::HashSet;

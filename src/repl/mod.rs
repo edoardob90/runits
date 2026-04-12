@@ -10,9 +10,11 @@ mod helper;
 use crate::annotations::{self, quantity_name};
 use crate::database::constants;
 use crate::database::{self, UnitDatabase};
+use crate::eval::EvalContext;
 use crate::format::{self, FormatOptions};
 use crate::parser;
 use crate::theme::Theme;
+use crate::units::Quantity;
 use crate::{Dimension, convert};
 use helper::UnitsHelper;
 use rustyline::Editor;
@@ -51,6 +53,11 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
     let t = Theme::new(opts.color);
     let db = database::global();
     let mut last_conversion: Option<convert::ConversionResult> = None;
+    // `last_quantity` feeds the `_` previous-result variable. It's updated
+    // by every successful evaluation (both plain echoes and conversions),
+    // while `last_conversion` is only set on full source→target conversions
+    // (since `explain` requires a target to make sense).
+    let mut last_quantity: Option<Quantity> = None;
 
     print_banner(banner, &t, db);
 
@@ -143,8 +150,19 @@ pub fn run(opts: &FormatOptions, banner: crate::cli::BannerMode) {
 
                 let _ = rl.add_history_entry(line);
 
-                if let Some(conv) = handle_input(line, db, opts) {
-                    last_conversion = Some(conv);
+                // Build an EvalContext fresh each line so `_` sees the most
+                // recent successful evaluation.
+                let ctx =
+                    EvalContext::with_previous(db, constants::global(), last_quantity.as_ref());
+                match handle_input(line, db, &ctx, opts) {
+                    HandleOutcome::Conversion(conv) => {
+                        last_quantity = Some(conv.result.clone());
+                        last_conversion = Some(conv);
+                    }
+                    HandleOutcome::Quantity(q) => {
+                        last_quantity = Some(q);
+                    }
+                    HandleOutcome::None => {}
                 }
             }
             Err(ReadlineError::Interrupted) => continue, // Ctrl-C: clear line
@@ -307,46 +325,44 @@ fn print_info(t: &Theme, db: &UnitDatabase) {
     );
 }
 
+/// Outcome of `handle_input`: used by the main REPL loop to decide which of
+/// `last_conversion` / `last_quantity` to update.
+enum HandleOutcome {
+    /// A full source→target conversion succeeded. Updates both
+    /// `last_conversion` (for `explain`) and `last_quantity` (for `_`).
+    Conversion(convert::ConversionResult),
+    /// A bare expression was echoed. Updates only `last_quantity`.
+    Quantity(Quantity),
+    /// Help command, error, or anything else that shouldn't touch state.
+    None,
+}
+
 /// Dispatch a REPL line: conversion, help query, or bare quantity.
 ///
-/// Returns `Some(result)` for successful conversions (used by `explain`
-/// to store the last conversion). Returns `None` for help queries,
-/// bare echoes, and errors.
+/// Takes an `EvalContext` so the `_` previous-result variable is in scope
+/// for both the delimiter-conversion path and the bare-quantity path.
 fn handle_input(
     line: &str,
     db: &UnitDatabase,
+    ctx: &EvalContext,
     opts: &FormatOptions,
-) -> Option<convert::ConversionResult> {
+) -> HandleOutcome {
     // 1. Delimiter-based input (check first, so "100 km/h -> ?" is caught).
     if let Some((source, target)) = parse_repl_line(line) {
         if target == "?" {
-            handle_quantity_help(source, db, opts);
-            return None;
+            handle_quantity_help(source, db, ctx, opts);
+            return HandleOutcome::None;
         }
-        match convert::run_conversion(source, target, db) {
+        match eval_and_convert(source, target, ctx) {
             Ok(result) => {
                 println!("{}", format::format_result(&result, opts));
-                return Some(result);
+                return HandleOutcome::Conversion(result);
             }
-            Err(_) => {
-                // Fallback: try source as a constant name (e.g., "c_0 to mph").
-                if let Some(result) = try_constant_conversion(source, target, db) {
-                    match result {
-                        Ok(r) => {
-                            println!("{}", format::format_result(&r, opts));
-                            return Some(r);
-                        }
-                        Err(e) => print_error(&e, opts),
-                    }
-                } else {
-                    // Re-run to get the original error message.
-                    if let Err(e) = convert::run_conversion(source, target, db) {
-                        print_error(&e, opts);
-                    }
-                }
+            Err(e) => {
+                print_error(&e, opts);
+                return HandleOutcome::None;
             }
         }
-        return None;
     }
 
     // 2. ? prefix/suffix: "? meter", "meter ?", "1 N ?"
@@ -354,44 +370,52 @@ fn handle_input(
     //    Otherwise → unit help ("? meter", "N ?").
     if let Some(query) = strip_question_mark(line) {
         let has_number = query.contains(|c: char| c.is_ascii_digit());
-        if has_number && let Ok(qty) = parser::parse_quantity(query, db) {
+        if has_number && let Ok(qty) = parser::parse_and_eval(query, ctx) {
             handle_quantity_help_from_qty(qty, db, opts);
-            return None;
+            return HandleOutcome::None;
         }
         handle_unit_help(query, db, opts);
-        return None;
+        return HandleOutcome::None;
     }
 
-    // 3. No delimiter, no ? — try parsing as a bare quantity.
-    //    Falls back to constants DB if quantity parsing fails.
-    match parser::parse_quantity(line, db) {
+    // 3. No delimiter, no ? — try parsing as a bare expression.
+    match parser::parse_and_eval(line, ctx) {
         Ok(qty) => {
             let annotation = quantity_name(&qty.unit.dimensions);
             let result = convert::ConversionResult {
                 source: qty.clone(),
-                result: qty,
+                result: qty.clone(),
                 annotation,
+                source_expr: Some(line.to_string()),
             };
             println!("{}", format::format_result(&result, opts));
+            HandleOutcome::Quantity(qty)
         }
         Err(e) => {
-            // Before reporting error, check if the whole input is a constant name.
-            let const_db = constants::global();
-            if let Some(c) = const_db.lookup(line) {
-                let qty = crate::units::Quantity::new(c.value, c.unit.clone());
-                let annotation = quantity_name(&qty.unit.dimensions);
-                let result = convert::ConversionResult {
-                    source: qty.clone(),
-                    result: qty,
-                    annotation,
-                };
-                println!("{}", format::format_result(&result, opts));
-            } else {
-                print_error(&e, opts);
-            }
+            print_error(&e, opts);
+            HandleOutcome::None
         }
     }
-    None
+}
+
+/// Evaluate the source expression, parse the target, convert, and package
+/// into a `ConversionResult`. Shared entry point for the REPL's delimiter
+/// path — CLI one-shot still goes through `convert::run_conversion`.
+fn eval_and_convert(
+    source: &str,
+    target: &str,
+    ctx: &EvalContext,
+) -> Result<convert::ConversionResult, crate::error::RUnitsError> {
+    let source_qty = parser::parse_and_eval(source, ctx)?;
+    let target_unit = parser::parse_unit_name(target, ctx.units)?;
+    let converted = source_qty.clone().convert_to(&target_unit)?;
+    let annotation = quantity_name(&converted.unit.dimensions);
+    Ok(convert::ConversionResult {
+        source: source_qty,
+        result: converted,
+        annotation,
+        source_expr: Some(source.to_string()),
+    })
 }
 
 /// Match a REPL command at the start of a line, returning its argument (possibly empty).
@@ -476,8 +500,8 @@ fn handle_unit_help(query: &str, db: &UnitDatabase, opts: &FormatOptions) {
 }
 
 /// Handle `100 km/h -> ?` — parse source, then show help.
-fn handle_quantity_help(source: &str, db: &UnitDatabase, opts: &FormatOptions) {
-    match parser::parse_quantity(source, db) {
+fn handle_quantity_help(source: &str, db: &UnitDatabase, ctx: &EvalContext, opts: &FormatOptions) {
+    match parser::parse_and_eval(source, ctx) {
         Ok(qty) => handle_quantity_help_from_qty(qty, db, opts),
         Err(e) => print_error(&e, opts),
     }
@@ -494,6 +518,7 @@ fn handle_quantity_help_from_qty(
         source: qty.clone(),
         result: qty.clone(),
         annotation,
+        source_expr: None,
     };
     println!("{}", format::format_result(&result, opts));
 
@@ -510,33 +535,6 @@ fn handle_quantity_help_from_qty(
             .join(", ");
         println!("  Compatible: {}", list);
     }
-}
-
-/// Try interpreting `source` as a constant name and converting to `target`.
-///
-/// Returns `None` if source is not a known constant, `Some(result)` otherwise.
-fn try_constant_conversion(
-    source: &str,
-    target: &str,
-    db: &UnitDatabase,
-) -> Option<Result<convert::ConversionResult, crate::error::RUnitsError>> {
-    let const_db = constants::global();
-    let c = const_db.lookup(source.trim())?;
-    let qty = crate::units::Quantity::new(c.value, c.unit.clone());
-    let target_unit = match parser::parse_unit_name(target, db) {
-        Ok(u) => u,
-        Err(e) => return Some(Err(e)),
-    };
-    let result = match qty.convert_to(&target_unit) {
-        Ok(r) => r,
-        Err(e) => return Some(Err(e)),
-    };
-    let annotation = quantity_name(&result.unit.dimensions);
-    Some(Ok(convert::ConversionResult {
-        source: qty,
-        result,
-        annotation,
-    }))
 }
 
 /// Handle `list <what> [filter]` — list units, dimensions, or constants.
